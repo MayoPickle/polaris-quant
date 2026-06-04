@@ -15,8 +15,9 @@ scheduler run it against the market. Trading goes through a broker abstraction �
 polaris-quant/
 ├── backend/            # FastAPI API + strategy engine + worker  (see backend/README.md)
 ├── frontend/           # Next.js dashboard                       (see frontend/README.md)
-├── docker-compose.yml  # Postgres + api + worker
-└── .env.example        # lives in backend/
+├── docker-compose.yml  # Postgres + api + worker + frontend
+├── compose.env.example # optional Docker Compose URL overrides
+└── backend/.env.example
 ```
 
 ## Quick start (dev)
@@ -37,11 +38,13 @@ cd frontend && npm run dev    # http://localhost:3000
 ## Production-like stack
 
 ```bash
-docker compose up --build     # Postgres + api + worker
+cp compose.env.example .env   # edit host/IP values for your server
+docker compose up -d --build  # Postgres + api + worker + frontend
 ```
 
 The compose frontend is exposed at http://localhost:3001 to avoid colliding
-with a local Next.js dev server on port 3000.
+with a local Next.js dev server on port 3000. PostgreSQL is only exposed inside
+the Docker network, so it will not conflict with a host Postgres on port 5432.
 
 ## Safety
 

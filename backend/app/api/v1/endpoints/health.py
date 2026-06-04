@@ -15,4 +15,7 @@ def health() -> dict:
         "env": settings.ENV,
         "broker_env": settings.ALPACA_ENV,
         "trading_enabled": settings.TRADING_ENABLED,
+        "openai_sizing_enabled": bool(settings.OPENAI_API_KEY),
+        "position_model": settings.POSITION_MODEL,
+        "default_position_allocation_pct": settings.DEFAULT_POSITION_ALLOCATION_PCT,
     }

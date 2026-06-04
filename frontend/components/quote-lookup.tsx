@@ -1,15 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Field, MetricGrid, MetricTile, WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
 import type { Quote } from "@/types";
 
@@ -43,21 +38,23 @@ export function QuoteLookup() {
     : [];
 
   return (
-    <Card className="rounded-lg md:rounded-xl">
-      <CardHeader>
-        <CardTitle>Quote lookup</CardTitle>
-        <CardDescription>Fetch the latest quote for a symbol</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-2 sm:flex">
+    <WorkbenchPanel
+      title="Quote lookup"
+      description="Fetch the latest bid, ask, and last price for a symbol."
+    >
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-2 sm:flex sm:items-end">
+          <Field label="Symbol" className="sm:w-40">
           <input
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && lookup()}
             placeholder="e.g. AAPL"
-            className="h-10 w-full rounded-lg border bg-background px-3 text-sm uppercase outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:w-40"
+            className="h-10 w-full rounded-lg border bg-background px-3 text-sm font-medium uppercase"
           />
+          </Field>
           <Button onClick={lookup} disabled={loading} className="w-full sm:w-auto">
+            <Search data-icon="inline-start" />
             {loading ? "Loading…" : "Get quote"}
           </Button>
         </div>
@@ -65,18 +62,18 @@ export function QuoteLookup() {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         {quote && (
-          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          <MetricGrid className="grid-cols-3 xl:grid-cols-3">
             {fields.map((f) => (
-              <div key={f.label} className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">{f.label}</p>
-                <p className="text-base font-semibold sm:text-lg">
-                  ${f.value.toFixed(2)}
-                </p>
-              </div>
+              <MetricTile
+                key={f.label}
+                label={f.label}
+                value={`$${f.value.toFixed(2)}`}
+                tone="info"
+              />
             ))}
-          </div>
+          </MetricGrid>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </WorkbenchPanel>
   );
 }

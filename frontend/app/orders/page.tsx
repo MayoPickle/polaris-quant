@@ -1,6 +1,5 @@
 import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -9,6 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { EmptyState, WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
 import { safe } from "@/lib/safe";
 
@@ -26,10 +26,15 @@ export default async function OrdersPage() {
 
   return (
     <AppShell title="Orders" subtitle="Order history across manual and strategy trades">
-      <div className="flex flex-col gap-3 md:hidden">
+      <WorkbenchPanel
+        title="Order history"
+        description="Manual and strategy-generated orders in one ledger."
+        actions={<Badge variant="outline">{(orders ?? []).length} orders</Badge>}
+        contentClassName="p-0"
+      >
+      <div className="md:hidden">
         {(orders ?? []).map((o) => (
-          <Card key={o.id} size="sm" className="rounded-lg">
-            <CardContent className="flex flex-col gap-3">
+          <div key={o.id} className="border-b p-4 last:border-b-0">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold">{o.symbol}</p>
@@ -52,23 +57,21 @@ export default async function OrdersPage() {
                 <span className="font-medium">
                   {o.filled_avg_price != null
                     ? `$${o.filled_avg_price.toFixed(2)} avg`
-                    : "No fill price"}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+                  : "No fill price"}
+              </span>
+            </div>
+          </div>
         ))}
         {(!orders || orders.length === 0) && (
-          <Card size="sm" className="rounded-lg">
-            <CardContent className="py-6 text-center text-sm text-muted-foreground">
+          <div className="p-4">
+            <EmptyState>
               {orders === null ? "Could not load orders." : "No orders yet."}
-            </CardContent>
-          </Card>
+            </EmptyState>
+          </div>
         )}
       </div>
 
-      <Card className="hidden md:flex">
-        <CardContent className="p-0">
+      <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -123,8 +126,8 @@ export default async function OrdersPage() {
               )}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </div>
+      </WorkbenchPanel>
     </AppShell>
   );
 }

@@ -1,11 +1,5 @@
 import { AppShell } from "@/components/app-shell";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -14,6 +8,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  EmptyState,
+  MetricGrid,
+  MetricTile,
+  WorkbenchPanel,
+} from "@/components/workbench";
 import { api } from "@/lib/api";
 import { safe } from "@/lib/safe";
 
@@ -44,41 +44,40 @@ export default async function PortfolioPage() {
 
   return (
     <AppShell title="Portfolio" subtitle="Account balances and open positions">
-      <section className="grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
+      <MetricGrid>
         {cards.map((c) => (
-          <Card key={c.label} size="sm" className="rounded-lg md:rounded-xl">
-            <CardHeader className="pb-2">
-              <CardDescription>{c.label}</CardDescription>
-              <CardTitle
-                className={`text-xl md:text-2xl ${
-                  c.tone === "pos"
-                    ? "text-green-600"
-                    : c.tone === "neg"
-                      ? "text-red-600"
-                      : ""
-                }`}
-              >
-                {c.value}
-              </CardTitle>
-            </CardHeader>
-            <CardContent />
-          </Card>
+          <MetricTile
+            key={c.label}
+            label={c.label}
+            value={c.value}
+            detail={c.label === "Unrealized P/L" ? "Open positions" : "Account"}
+            tone={
+              c.tone === "pos"
+                ? "positive"
+                : c.tone === "neg"
+                  ? "negative"
+                  : "neutral"
+            }
+          />
         ))}
-      </section>
+      </MetricGrid>
 
       {!account && (
-        <p className="text-sm text-muted-foreground">
+        <p className="rounded-lg border border-dashed bg-card px-4 py-3 text-sm text-muted-foreground">
           Account data unavailable — check that the broker credentials in the
           backend are valid.
         </p>
       )}
 
-      <section>
-        <h2 className="mb-3 text-lg font-semibold">Open positions</h2>
-        <div className="flex flex-col gap-3 md:hidden">
+      <WorkbenchPanel
+        title="Open positions"
+        description="Symbol exposure, market value, and unrealized P/L."
+        actions={<Badge variant="outline">{(positions ?? []).length} symbols</Badge>}
+        contentClassName="p-0"
+      >
+        <div className="md:hidden">
           {(positions ?? []).map((p) => (
-            <Card key={p.symbol} size="sm" className="rounded-lg">
-              <CardContent className="flex flex-col gap-3">
+            <div key={p.symbol} className="border-b p-4 last:border-b-0">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="font-semibold">{p.symbol}</p>
@@ -98,21 +97,19 @@ export default async function PortfolioPage() {
                   <span className="text-muted-foreground">Market value</span>
                   <span className="font-medium">{usd(p.market_value)}</span>
                 </div>
-              </CardContent>
-            </Card>
+            </div>
           ))}
           {(!positions || positions.length === 0) && (
-            <Card size="sm" className="rounded-lg">
-              <CardContent className="py-6 text-center text-sm text-muted-foreground">
+            <div className="p-4">
+              <EmptyState>
                 {positions === null
                   ? "Could not load positions (broker not connected)."
                   : "No open positions."}
-              </CardContent>
-            </Card>
+              </EmptyState>
+            </div>
           )}
         </div>
-        <Card className="hidden md:flex">
-          <CardContent className="p-0">
+        <div className="hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -157,9 +154,8 @@ export default async function PortfolioPage() {
                 )}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-      </section>
+        </div>
+      </WorkbenchPanel>
     </AppShell>
   );
 }

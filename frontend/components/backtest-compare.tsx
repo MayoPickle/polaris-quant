@@ -14,13 +14,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Table,
   TableBody,
   TableCell,
@@ -28,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
 import type { BacktestResult, StrategyDescriptor } from "@/types";
 
@@ -120,16 +114,13 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
   })();
 
   return (
-    <Card className="rounded-lg md:rounded-xl">
-      <CardHeader>
-        <CardTitle>Compare backtests</CardTitle>
-        <CardDescription>
-          Run several strategies or parameter sets and compare their performance.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <WorkbenchPanel
+      title="Compare backtests"
+      description="Run several strategies or parameter sets and compare their performance."
+      contentClassName="flex flex-col gap-5"
+    >
         {/* Run rows */}
-        <div className="space-y-2">
+        <div className="flex flex-col gap-2">
           {rows.map((row, i) => {
             const strat = strategies.find((s) => s.key === row.strategyKey);
             const props =
@@ -137,7 +128,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
             return (
               <div
                 key={row.id}
-                className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:flex md:flex-wrap md:items-end md:gap-2 md:border-0 md:bg-transparent md:p-0"
+                className="grid gap-3 rounded-lg border bg-muted/20 p-3 md:flex md:flex-wrap md:items-end md:gap-2"
               >
                 <span
                   className="hidden h-3 w-3 shrink-0 rounded-full md:mb-2 md:inline-block"
@@ -353,8 +344,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
             </div>
           </>
         )}
-      </CardContent>
-    </Card>
+    </WorkbenchPanel>
   );
 }
 

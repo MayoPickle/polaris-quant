@@ -7,6 +7,12 @@ import type {
   BacktestCompareResult,
   BacktestRequest,
   BacktestResult,
+  BacktestUniverse,
+  BatchBacktestJob,
+  BatchBacktestReport,
+  BatchBacktestRequest,
+  Health,
+  MarketBarsResponse,
   Order,
   OrderCreate,
   Position,
@@ -14,6 +20,7 @@ import type {
   StrategyDescriptor,
   StrategyInstance,
   StrategyInstanceCreate,
+  StrategyInstanceUpdate,
 } from "@/types";
 
 const BASE_URL =
@@ -21,8 +28,9 @@ const BASE_URL =
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    cache: "no-store",
     ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     const detail = await res.text();
@@ -32,6 +40,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  health: () => request<Health>("/health"),
+
   // Strategies
   availableStrategies: () =>
     request<StrategyDescriptor[]>("/strategies/available"),
@@ -39,6 +49,11 @@ export const api = {
   createStrategy: (body: StrategyInstanceCreate) =>
     request<StrategyInstance>("/strategies", {
       method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateStrategy: (id: number, body: StrategyInstanceUpdate) =>
+    request<StrategyInstance>(`/strategies/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
   backtest: (body: BacktestRequest) =>
@@ -51,6 +66,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  backtestUniverses: () =>
+    request<BacktestUniverse[]>("/strategies/backtest/universes"),
+  createBatchBacktest: (body: BatchBacktestRequest) =>
+    request<BatchBacktestJob>("/strategies/backtest/batch", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  batchBacktest: (jobId: string) =>
+    request<BatchBacktestJob>(`/strategies/backtest/batch/${jobId}`),
+  batchBacktestReport: (jobId: string) =>
+    request<BatchBacktestReport>(`/strategies/backtest/batch/${jobId}/report`),
+  cancelBatchBacktest: (jobId: string) =>
+    request<BatchBacktestJob>(`/strategies/backtest/batch/${jobId}`, {
+      method: "DELETE",
+    }),
 
   // Orders
   listOrders: () => request<Order[]>("/orders"),
@@ -61,5 +91,16 @@ export const api = {
   listPositions: () => request<Position[]>("/positions"),
   account: () => request<Account>("/account"),
   quote: (symbol: string) => request<Quote>(`/market/quote/${symbol}`),
+  marketBars: (
+    symbols: string[],
+    options: { timeframe?: string; lookback_days?: number } = {}
+  ) => {
+    const params = new URLSearchParams({
+      symbols: symbols.join(","),
+      timeframe: options.timeframe ?? "1Day",
+      lookback_days: String(options.lookback_days ?? 90),
+    });
+    return request<MarketBarsResponse>(`/market/bars?${params}`);
+  },
   marketClock: () => request<{ is_open: boolean }>("/market/clock"),
 };

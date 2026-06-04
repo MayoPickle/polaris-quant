@@ -44,6 +44,26 @@ class QuoteRead(BaseModel):
     last_price: float
 
 
+class MarketBarRead(BaseModel):
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class MarketBarSeriesRead(BaseModel):
+    symbol: str
+    bars: list[MarketBarRead]
+
+
+class MarketBarsRead(BaseModel):
+    timeframe: str
+    lookback_days: int
+    series: list[MarketBarSeriesRead]
+
+
 class AccountRead(BaseModel):
     cash: float
     equity: float

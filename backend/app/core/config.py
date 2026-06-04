@@ -51,6 +51,26 @@ class Settings(BaseSettings):
     SCHEDULER_TIMEZONE: str = "America/New_York"
     MARKET_TIMEZONE: str = "America/New_York"
 
+    # ---- Automated strategy trading ----
+    DEFAULT_STRATEGY_SCHEDULE: str = "55 10-15 * * 1-5"
+    STRATEGY_TIMEFRAME: Literal["1Hour"] = "1Hour"
+    STRATEGY_LOOKBACK_DAYS: int = 30
+    STRATEGY_DATA_DELAY_MINUTES: int = 20
+
+    # ---- OpenAI position sizing ----
+    OPENAI_API_KEY: str = ""
+    POSITION_MODEL: str = "gpt-5.5"
+    DEFAULT_POSITION_ALLOCATION_PCT: float = 1.0
+    OPENAI_TIMEOUT_SECONDS: float = 15.0
+
+    # ---- Batch backtesting ----
+    REDIS_URL: str = "redis://localhost:6379/0"
+    BACKTEST_QUEUE_NAME: str = "backtests"
+    BACKTEST_WORKER_MODE: Literal["simple", "fork"] = "simple"
+    BACKTEST_JOB_TIMEOUT_SECONDS: int = 60 * 60 * 2
+    BACKTEST_MAX_SYMBOLS: int = 750
+    BACKTEST_SYMBOL_THROTTLE_SECONDS: float = 0.05
+
     # ---- Risk controls ----
     TRADING_ENABLED: bool = False
     MAX_POSITION_SIZE_USD: float = 1000.0

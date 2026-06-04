@@ -1,6 +1,6 @@
 # Polaris Quant — Backend
 
-FastAPI + SQLAlchemy + APScheduler. Broker-agnostic core with an Alpaca
+FastAPI + SQLAlchemy + APScheduler + RQ. Broker-agnostic core with an Alpaca
 implementation. SQLite in dev, PostgreSQL in prod.
 
 ## Setup
@@ -26,6 +26,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 python -m app.db.init_db        # create tables (dev convenience)
 uvicorn app.main:app --reload   # web process  -> http://localhost:8000/docs
 python -m app.workers.runtime   # worker process (separate terminal)
+python -m app.workers.backtest_worker  # batch backtest queue worker, requires Redis
 ```
 
 ## Migrations (Alembic)
@@ -55,7 +56,7 @@ app/
 ├── brokers/           # base.BrokerClient + alpaca/ + factory
 ├── strategies/        # base + registry + engine + builtin/
 ├── risk/              # pre-trade RiskGuard (kill-switch + limits)
-└── workers/           # APScheduler runtime + jobs (worker process)
+└── workers/           # APScheduler runtime + RQ batch backtest jobs
 ```
 
 ## Key design points

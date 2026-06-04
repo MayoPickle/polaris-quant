@@ -17,6 +17,8 @@ dependencies = [
     "apscheduler>=3.11",              # background scheduler
     "alpaca-py>=0.33",                # Alpaca broker SDK
     "httpx>=0.28",
+    "redis>=5.2",
+    "rq>=2.0",
 ]
 
 [project.optional-dependencies]

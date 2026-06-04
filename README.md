@@ -5,8 +5,9 @@ scheduler run it against the market. Trading goes through a broker abstraction �
 **Alpaca** is the first implementation (paper trading by default).
 
 - **Frontend** — Next.js + Tailwind + shadcn/ui (English-only UI)
-- **Backend** — FastAPI + SQLAlchemy + APScheduler
+- **Backend** — FastAPI + SQLAlchemy + APScheduler + RQ
 - **Database** — SQLite (dev) / PostgreSQL (prod)
+- **Queue** — Redis for long-running batch backtests
 - **Broker** — Alpaca (paper → live), behind a swappable `BrokerClient` interface
 
 ## Repository layout
@@ -29,7 +30,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env          # fill in Alpaca keys + generate secrets
 python -m app.db.init_db
-uvicorn app.main:app --reload # http://localhost:8000/docs
+uvicorn app.main:app --reload      # http://localhost:8000/docs
+python -m app.workers.backtest_worker  # separate terminal, requires Redis
 
 # Frontend (separate terminal) — see frontend/README.md to scaffold first
 cd frontend && npm run dev    # http://localhost:3000

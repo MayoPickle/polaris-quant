@@ -3,6 +3,14 @@
 # (see README). The web and worker share the same image and database.
 
 services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   db:
     image: postgres:16
     environment:
@@ -25,10 +33,13 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   worker:
@@ -41,6 +52,21 @@ services:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
     depends_on:
       db:
+        condition: service_healthy
+
+  backtest_worker:
+    build: ./backend
+    command: python -m app.workers.backtest_worker
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   frontend:

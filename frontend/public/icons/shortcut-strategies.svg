@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Strategies">
+  <rect width="96" height="96" rx="20" fill="#111111"/>
+  <path d="M31 52a15 15 0 1 1 14-25v42A15 15 0 1 1 31 52Z" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M45 36h17M45 48h24M45 60h17" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="66" cy="36" r="4" fill="#22c55e"/>
+  <circle cx="73" cy="48" r="4" fill="#ffffff"/>
+  <circle cx="66" cy="60" r="4" fill="#ffffff"/>
+</svg>

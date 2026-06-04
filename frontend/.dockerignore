@@ -1,0 +1,17 @@
+.env
+*.env
+!.env.example
+
+node_modules/
+.next/
+out/
+dist/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+.git/
+.gitignore
+Dockerfile
+
+.DS_Store

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Polaris Quant">
+  <rect width="512" height="512" rx="96" fill="#111111"/>
+  <path d="M132 332 212 184l54 98 40-66 74 116" fill="none" stroke="#ffffff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="212" cy="184" r="18" fill="#ffffff"/>
+  <circle cx="266" cy="282" r="18" fill="#22c55e"/>
+  <circle cx="306" cy="216" r="18" fill="#ffffff"/>
+  <path d="M136 384h240" stroke="#ffffff" stroke-width="24" stroke-linecap="round" opacity=".84"/>
+</svg>

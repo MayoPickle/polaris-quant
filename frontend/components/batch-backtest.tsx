@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { FileUp, Play, RefreshCw, Square } from "lucide-react";
+import { ArrowUpDown, ChevronLeft, ChevronRight, FileUp, Play, RefreshCw, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +39,30 @@ type ParamSpec = { type?: string; default?: number; title?: string };
 
 const COLORS = ["#2563eb", "#16a34a", "#dc2626"];
 const FINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+const RESULTS_PAGE_SIZE = 25;
+
+type RankingSortKey =
+  | "rank"
+  | "symbol"
+  | "total_return_pct"
+  | "sharpe"
+  | "max_drawdown_pct"
+  | "win_rate_pct"
+  | "num_trades"
+  | "final_equity";
+type SortDirection = "asc" | "desc";
+type RankedResult = BatchBacktestSymbolResult & { rank: number };
+
+const RANKING_SORT_LABELS: Record<RankingSortKey, string> = {
+  rank: "Rank",
+  symbol: "Symbol",
+  total_return_pct: "Return",
+  sharpe: "Sharpe",
+  max_drawdown_pct: "Max DD",
+  win_rate_pct: "Win rate",
+  num_trades: "Trades",
+  final_equity: "Final equity",
+};
 
 const usd = (n: number) =>
   n.toLocaleString("en-US", {
@@ -621,17 +645,75 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
 }
 
 function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
+  const [sort, setSort] = useState<{
+    key: RankingSortKey;
+    direction: SortDirection;
+  }>({
+    key: "rank",
+    direction: "asc",
+  });
+  const [page, setPage] = useState(1);
+
+  const ranked = useMemo<RankedResult[]>(
+    () => results.map((row, index) => ({ ...row, rank: index + 1 })),
+    [results]
+  );
+  const sorted = useMemo(() => sortRankedResults(ranked, sort.key, sort.direction), [
+    ranked,
+    sort.direction,
+    sort.key,
+  ]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / RESULTS_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * RESULTS_PAGE_SIZE;
+  const pageRows = sorted.slice(pageStart, pageStart + RESULTS_PAGE_SIZE);
+  const visibleStart = sorted.length === 0 ? 0 : pageStart + 1;
+  const visibleEnd = pageStart + pageRows.length;
+
+  function handleSort(key: RankingSortKey) {
+    setSort((current) => ({
+      key,
+      direction:
+        current.key === key
+          ? current.direction === "asc"
+            ? "desc"
+            : "asc"
+          : defaultSortDirection(key),
+    }));
+    setPage(1);
+  }
+
   return (
     <div className="flex flex-col gap-3">
-      <h4 className="text-sm font-semibold">Symbol ranking</h4>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h4 className="text-sm font-semibold">Symbol ranking</h4>
+        <p className="text-xs text-muted-foreground">
+          {visibleStart}-{visibleEnd} of {sorted.length}
+        </p>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
+        {(Object.keys(RANKING_SORT_LABELS) as RankingSortKey[]).map((key) => (
+          <Button
+            key={key}
+            type="button"
+            variant={sort.key === key ? "secondary" : "outline"}
+            size="sm"
+            className="shrink-0"
+            onClick={() => handleSort(key)}
+          >
+            {RANKING_SORT_LABELS[key]}
+            {sort.key === key && (sort.direction === "asc" ? " ↑" : " ↓")}
+          </Button>
+        ))}
+      </div>
       <div className="flex flex-col gap-2 md:hidden">
-        {results.slice(0, 30).map((row, index) => (
+        {pageRows.map((row) => (
           <div key={row.symbol} className="rounded-lg border p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-mono text-sm font-semibold">{row.symbol}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  #{index + 1} by return · {row.num_trades ?? 0} trades
+                  #{row.rank} by return · {row.num_trades ?? 0} trades
                 </p>
               </div>
               <p className={cn("shrink-0 text-sm font-semibold", returnTone(row.total_return_pct))}>
@@ -654,18 +736,66 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
         <Table className="min-w-[48rem]">
           <TableHeader>
             <TableRow>
-              <TableHead>Symbol</TableHead>
-              <TableHead className="text-right">Return</TableHead>
-              <TableHead className="text-right">Sharpe</TableHead>
-              <TableHead className="text-right">Max DD</TableHead>
-              <TableHead className="text-right">Win rate</TableHead>
-              <TableHead className="text-right">Trades</TableHead>
-              <TableHead className="text-right">Final equity</TableHead>
+              <SortableTableHead
+                label="Rank"
+                sortKey="rank"
+                activeSort={sort}
+                onSort={handleSort}
+              />
+              <SortableTableHead
+                label="Symbol"
+                sortKey="symbol"
+                activeSort={sort}
+                onSort={handleSort}
+              />
+              <SortableTableHead
+                label="Return"
+                sortKey="total_return_pct"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Sharpe"
+                sortKey="sharpe"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Max DD"
+                sortKey="max_drawdown_pct"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Win rate"
+                sortKey="win_rate_pct"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Trades"
+                sortKey="num_trades"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label="Final equity"
+                sortKey="final_equity"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {results.slice(0, 100).map((row) => (
+            {pageRows.map((row) => (
               <TableRow key={row.symbol}>
+                <TableCell className="text-xs text-muted-foreground">#{row.rank}</TableCell>
                 <TableCell className="font-mono text-xs">{row.symbol}</TableCell>
                 <TableCell className={cn("text-right font-medium", returnTone(row.total_return_pct))}>
                   {pct(row.total_return_pct)}
@@ -684,13 +814,128 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
           </TableBody>
         </Table>
       </div>
-      {results.length > 100 && (
-        <p className="text-xs text-muted-foreground">
-          Showing top 100 of {results.length} successful symbols by return.
-        </p>
-      )}
+      <RankingPagination
+        page={safePage}
+        pageCount={pageCount}
+        onPageChange={setPage}
+      />
     </div>
   );
+}
+
+function SortableTableHead({
+  label,
+  sortKey,
+  activeSort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  sortKey: RankingSortKey;
+  activeSort: { key: RankingSortKey; direction: SortDirection };
+  onSort: (key: RankingSortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = activeSort.key === sortKey;
+  return (
+    <TableHead className={align === "right" ? "text-right" : undefined}>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-7 items-center gap-1 rounded-md text-xs font-semibold uppercase tracking-[0.02em] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          align === "right" && "ml-auto"
+        )}
+        onClick={() => onSort(sortKey)}
+      >
+        {label}
+        <ArrowUpDown
+          className={cn("size-3", active ? "text-foreground" : "text-muted-foreground/60")}
+        />
+        {active && (
+          <span className="text-[0.65rem] text-foreground">
+            {activeSort.direction === "asc" ? "↑" : "↓"}
+          </span>
+        )}
+      </button>
+    </TableHead>
+  );
+}
+
+function RankingPagination({
+  page,
+  pageCount,
+  onPageChange,
+}: {
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-xs text-muted-foreground">
+        Page {page} of {pageCount}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          disabled={page <= 1}
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          aria-label="Previous page"
+        >
+          <ChevronLeft />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          disabled={page >= pageCount}
+          onClick={() => onPageChange(Math.min(pageCount, page + 1))}
+          aria-label="Next page"
+        >
+          <ChevronRight />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function sortRankedResults(
+  rows: RankedResult[],
+  key: RankingSortKey,
+  direction: SortDirection
+) {
+  return [...rows].sort((a, b) => {
+    const comparison =
+      key === "symbol"
+        ? a.symbol.localeCompare(b.symbol)
+        : compareNullableNumbers(sortValue(a, key), sortValue(b, key));
+    const directed = direction === "asc" ? comparison : -comparison;
+    return directed || a.rank - b.rank || a.symbol.localeCompare(b.symbol);
+  });
+}
+
+function sortValue(row: RankedResult, key: Exclude<RankingSortKey, "symbol">) {
+  if (key === "rank") return row.rank;
+  return row[key];
+}
+
+function compareNullableNumbers(
+  a: number | null | undefined,
+  b: number | null | undefined
+) {
+  const aMissing = a === null || a === undefined || Number.isNaN(a);
+  const bMissing = b === null || b === undefined || Number.isNaN(b);
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+  return a - b;
+}
+
+function defaultSortDirection(key: RankingSortKey): SortDirection {
+  if (key === "rank" || key === "symbol" || key === "max_drawdown_pct") return "asc";
+  return "desc";
 }
 
 function representativeChartData(report: BatchBacktestReport) {

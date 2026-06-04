@@ -44,6 +44,9 @@ cp compose.env.example .env   # edit host/IP values for your server
 docker compose up -d --build  # Postgres + api + worker + frontend
 ```
 
+Compose runs `alembic upgrade head` before starting the API/workers and seeds
+the fixed development user used by the current auth stub.
+
 The compose frontend is exposed at http://localhost:3001 to avoid colliding
 with a local Next.js dev server on port 3000. PostgreSQL is only exposed inside
 the Docker network, so it will not conflict with a host Postgres on port 5432.

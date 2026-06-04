@@ -25,6 +25,18 @@ services:
       timeout: 3s
       retries: 5
 
+  migrate:
+    build: ./backend
+    command: sh -c "alembic upgrade head && python -m app.db.seed_dev_user"
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build: ./backend
     env_file:
@@ -37,6 +49,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -51,6 +65,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
 
@@ -64,6 +80,8 @@ services:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
       REDIS_URL: redis://redis:6379/0
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:

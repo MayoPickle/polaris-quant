@@ -8,6 +8,7 @@ For development convenience only. In production, use Alembic migrations instead.
 from app.core.logging import configure_logging, get_logger
 from app.db.base import Base
 from app.db.base_all import *  # noqa: F401,F403 — register all models on Base.metadata
+from app.db.seed_dev_user import ensure_dev_user
 from app.db.session import engine
 
 logger = get_logger(__name__)
@@ -16,6 +17,7 @@ logger = get_logger(__name__)
 def main() -> None:
     configure_logging()
     Base.metadata.create_all(bind=engine)
+    ensure_dev_user()
     logger.info("Created all tables on %s", engine.url)
 
 

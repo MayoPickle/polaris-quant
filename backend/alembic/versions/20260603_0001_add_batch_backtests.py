@@ -1,7 +1,7 @@
 """add batch backtest jobs
 
 Revision ID: 20260603_0001
-Revises:
+Revises: 20260602_0000
 Create Date: 2026-06-03 00:00:00.000000
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20260603_0001"
-down_revision: str | None = None
+down_revision: str | None = "20260602_0000"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

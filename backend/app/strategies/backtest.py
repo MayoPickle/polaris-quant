@@ -1,13 +1,13 @@
 """Event-driven backtest engine.
 
 Walks bars forward one at a time, feeding the strategy the data available up to
-that point (no look-ahead), and simulates an all-in / all-out long-only book:
-a buy signal invests all cash, a sell signal liquidates the position. Produces an
-equity curve plus summary performance metrics.
+that point (no look-ahead), and simulates a long-only book. A buy signal is
+translated through a position sizing model, and a sell signal liquidates the
+position. Produces an equity curve plus summary performance metrics.
 
 Assumptions (documented so results are interpretable):
 - Fills happen at the signal bar's close, no slippage or commission.
-- Long-only, one position at a time, whole shares.
+- Long-only, whole shares.
 """
 
 from __future__ import annotations
@@ -17,6 +17,11 @@ from dataclasses import asdict, dataclass, field
 
 from app.brokers.base import Bar
 from app.strategies.base import Strategy
+from app.strategies.position_sizing import (
+    calculate_buy_quantity,
+    normalize_position_sizing,
+    position_sizing_summary_pct,
+)
 
 # Annualization factor per timeframe, for the Sharpe ratio.
 _PERIODS_PER_YEAR = {"1Day": 252, "1Hour": 252 * 7, "1Min": 252 * 390}
@@ -38,6 +43,8 @@ class BacktestResult:
     symbol: str
     strategy_key: str
     initial_capital: float
+    position_size_pct: float
+    position_sizing: dict
     final_equity: float
     total_return_pct: float
     buy_hold_return_pct: float
@@ -78,10 +85,28 @@ def _sharpe(equity: list[float], periods_per_year: int) -> float:
     return (mean / std) * math.sqrt(periods_per_year)
 
 
-def _buy_hold_return(bars: list[Bar]) -> float:
+def _buy_hold_return(
+    bars: list[Bar],
+    *,
+    initial_capital: float,
+    position_sizing: dict,
+    timeframe: str,
+) -> float:
     if len(bars) < 2 or bars[0].close <= 0:
         return 0.0
-    return (bars[-1].close / bars[0].close - 1) * 100
+    cash = initial_capital
+    shares = calculate_buy_quantity(
+        config=position_sizing,
+        bars=bars[:1],
+        cash=cash,
+        shares=0,
+        close=bars[0].close,
+        timeframe=timeframe,
+        benchmark=True,
+    )
+    cash -= shares * bars[0].close
+    final_equity = cash + shares * bars[-1].close
+    return (final_equity / initial_capital - 1) * 100
 
 
 def run_backtest(
@@ -91,7 +116,14 @@ def run_backtest(
     *,
     timeframe: str = "1Day",
     initial_capital: float = 100_000.0,
+    position_size_pct: float = 20.0,
+    position_sizing: dict | None = None,
 ) -> BacktestResult:
+    sizing = normalize_position_sizing(
+        position_sizing,
+        fallback_position_size_pct=position_size_pct,
+    )
+    display_position_size_pct = position_sizing_summary_pct(sizing)
     cash = initial_capital
     shares = 0
     entry_price = 0.0
@@ -110,10 +142,32 @@ def run_backtest(
         )
         if signal:
             if signal.side == "buy" and shares == 0 and close > 0:
-                shares = int(cash // close)
-                if shares > 0:
-                    cash -= shares * close
+                buy_qty = calculate_buy_quantity(
+                    config=sizing,
+                    bars=window,
+                    cash=cash,
+                    shares=shares,
+                    close=close,
+                    timeframe=timeframe,
+                )
+                if buy_qty > 0:
+                    cash -= buy_qty * close
+                    shares = buy_qty
                     entry_price, entry_time = close, ts
+            elif signal.side == "buy" and shares > 0:
+                buy_qty = calculate_buy_quantity(
+                    config=sizing,
+                    bars=window,
+                    cash=cash,
+                    shares=shares,
+                    close=close,
+                    timeframe=timeframe,
+                )
+                if buy_qty > 0:
+                    total_cost = entry_price * shares + buy_qty * close
+                    shares += buy_qty
+                    cash -= buy_qty * close
+                    entry_price = total_cost / shares
             elif signal.side == "sell" and shares > 0:
                 cash += shares * close
                 pnl = (close - entry_price) * shares
@@ -152,13 +206,23 @@ def run_backtest(
     equity_values = [p["equity"] for p in equity_curve] or [initial_capital]
     final_equity = equity_values[-1]
     total_return_pct = round((final_equity / initial_capital - 1) * 100, 2)
-    buy_hold_return_pct = round(_buy_hold_return(bars), 2)
+    buy_hold_return_pct = round(
+        _buy_hold_return(
+            bars,
+            initial_capital=initial_capital,
+            position_sizing=sizing,
+            timeframe=timeframe,
+        ),
+        2,
+    )
     wins = sum(1 for t in trades if t.pnl > 0)
 
     return BacktestResult(
         symbol=symbol,
         strategy_key=strategy.key,
         initial_capital=initial_capital,
+        position_size_pct=display_position_size_pct,
+        position_sizing=sizing,
         final_equity=round(final_equity, 2),
         total_return_pct=total_return_pct,
         buy_hold_return_pct=buy_hold_return_pct,

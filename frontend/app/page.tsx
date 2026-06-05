@@ -16,7 +16,6 @@ import {
   StatusDot,
   WorkbenchPanel,
 } from "@/components/workbench";
-import { api } from "@/lib/api";
 import {
   brokerEnvLabel,
   formatCurrency,
@@ -30,6 +29,7 @@ import {
 import { getDictionary } from "@/lib/i18n/dictionaries";
 import { getServerLocale } from "@/lib/i18n/server";
 import { safe } from "@/lib/safe";
+import { serverApi as api } from "@/lib/server-api";
 import type { Order, Position, StrategyInstance } from "@/types";
 
 function orderStatusVariant(

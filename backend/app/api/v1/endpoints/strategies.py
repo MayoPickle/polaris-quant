@@ -27,6 +27,7 @@ from app.schemas.strategy import (
     BacktestCompareResult,
     BacktestRequest,
     BacktestResultRead,
+    PositionSizingConfig,
     StrategyDescriptor,
     StrategyInstanceCreate,
     StrategyInstanceRead,
@@ -40,6 +41,10 @@ from app.services.backtest_batch_service import (
 from app.strategies import registry
 from app.strategies.backtest import BacktestResult, run_backtest
 from app.strategies.metadata_i18n import localized_strategy_metadata
+from app.strategies.position_sizing import (
+    normalize_position_sizing,
+    position_sizing_summary_pct,
+)
 from app.workers.queue import enqueue_batch_backtest, get_redis_connection
 
 router = APIRouter()
@@ -190,6 +195,23 @@ def _backtest_window(lookback_days: int) -> tuple[datetime, datetime]:
     return end - timedelta(days=lookback_days), end
 
 
+def _resolve_position_sizing(
+    config: PositionSizingConfig | None,
+    position_size_pct: float,
+    *,
+    universe_size: int | None = None,
+) -> dict:
+    raw = config.model_dump() if config is not None else None
+    try:
+        return normalize_position_sizing(
+            raw,
+            fallback_position_size_pct=position_size_pct,
+            universe_size=universe_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 def _run_one(
     broker: BrokerClient,
     *,
@@ -198,6 +220,8 @@ def _run_one(
     symbol: str,
     timeframe: str,
     initial_capital: float,
+    position_size_pct: float,
+    position_sizing: dict,
     bars,
     label: str | None = None,
 ) -> BacktestResult:
@@ -208,7 +232,13 @@ def _run_one(
     if len(bars) < 5:
         raise HTTPException(422, f"Not enough historical data for {symbol} to backtest.")
     result = run_backtest(
-        strategy, symbol, bars, timeframe=timeframe, initial_capital=initial_capital
+        strategy,
+        symbol,
+        bars,
+        timeframe=timeframe,
+        initial_capital=initial_capital,
+        position_size_pct=position_size_pct,
+        position_sizing=position_sizing,
     )
     result.label = label
     return result
@@ -233,6 +263,11 @@ def backtest(
         symbol=symbol,
         timeframe=payload.timeframe,
         initial_capital=payload.initial_capital,
+        position_size_pct=payload.position_size_pct,
+        position_sizing=_resolve_position_sizing(
+            payload.position_sizing,
+            payload.position_size_pct,
+        ),
         bars=bars,
     )
     return BacktestResultRead(**result.__dict__)
@@ -264,6 +299,11 @@ def backtest_compare(
             symbol=symbol,
             timeframe=payload.timeframe,
             initial_capital=payload.initial_capital,
+            position_size_pct=payload.position_size_pct,
+            position_sizing=_resolve_position_sizing(
+                payload.position_sizing,
+                payload.position_size_pct,
+            ),
             bars=bars_cache[symbol],
             label=run.label,
         )
@@ -303,6 +343,12 @@ def create_batch_backtest(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Could not resolve universe symbols: {exc}")
 
+    position_sizing = _resolve_position_sizing(
+        payload.position_sizing,
+        payload.position_size_pct,
+        universe_size=len(symbols),
+    )
+
     job = BacktestJob(
         id=str(uuid4()),
         user_id=user_id,
@@ -311,6 +357,8 @@ def create_batch_backtest(
         timeframe=payload.timeframe,
         lookback_days=payload.lookback_days,
         initial_capital=payload.initial_capital,
+        position_size_pct=position_sizing_summary_pct(position_sizing),
+        position_sizing=position_sizing,
         universes=payload.universes,
         symbols=symbols,
         total_symbols=len(symbols),

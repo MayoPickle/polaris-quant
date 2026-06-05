@@ -8,8 +8,9 @@ from passlib.context import CryptContext
 
 from app.core.config import settings
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
 _ALGORITHM = "HS256"
+SESSION_COOKIE_NAME = "polaris_session"
 
 
 # ---- Passwords ----

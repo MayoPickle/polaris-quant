@@ -14,11 +14,11 @@ import {
   MetricTile,
   WorkbenchPanel,
 } from "@/components/workbench";
-import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/i18n/format";
 import { getDictionary } from "@/lib/i18n/dictionaries";
 import { getServerLocale } from "@/lib/i18n/server";
 import { safe } from "@/lib/safe";
+import { serverApi as api } from "@/lib/server-api";
 
 export default async function PortfolioPage() {
   const locale = await getServerLocale();

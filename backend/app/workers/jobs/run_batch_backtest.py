@@ -81,6 +81,8 @@ def _run_batch_backtest_job(job_id: str) -> None:
                 bars,
                 timeframe=job_snapshot.timeframe,
                 initial_capital=job_snapshot.initial_capital,
+                position_size_pct=job_snapshot.position_size_pct,
+                position_sizing=job_snapshot.position_sizing,
             )
             row = result_from_backtest(job_id, result)
         except WORKER_CONTROL_EXCEPTIONS:

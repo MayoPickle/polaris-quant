@@ -3,6 +3,8 @@
 
 import type {
   Account,
+  AuthCredentials,
+  AuthUser,
   BacktestCompareRequest,
   BacktestCompareResult,
   BacktestRequest,
@@ -17,6 +19,7 @@ import type {
   OrderCreate,
   Position,
   Quote,
+  SetupStatus,
   StrategyDescriptor,
   StrategyInstance,
   StrategyInstanceCreate,
@@ -41,17 +44,22 @@ function apiBaseUrl(): string {
   );
 }
 
+type HeaderProvider = () => HeadersInit | Promise<HeadersInit>;
+
 async function request<T>(
   path: string,
   init?: RequestInit,
-  locale?: Locale
+  locale?: Locale,
+  headerProvider?: HeaderProvider
 ): Promise<T> {
-  const headers = new Headers(init?.headers);
+  const headers = new Headers(await headerProvider?.());
+  new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
   headers.set("Content-Type", "application/json");
   if (locale) headers.set("Accept-Language", locale);
 
   const res = await fetch(`${apiBaseUrl()}${path}`, {
     cache: "no-store",
+    credentials: "include",
     ...init,
     headers,
   });
@@ -62,70 +70,91 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
-export const api = {
-  health: () => request<Health>("/health"),
+export function createApiClient(headerProvider?: HeaderProvider) {
+  return {
+    health: () => request<Health>("/health", undefined, undefined, headerProvider),
 
-  // Strategies
-  availableStrategies: (locale?: Locale) =>
-    request<StrategyDescriptor[]>("/strategies/available", undefined, locale),
-  listStrategies: () => request<StrategyInstance[]>("/strategies"),
-  createStrategy: (body: StrategyInstanceCreate) =>
-    request<StrategyInstance>("/strategies", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateStrategy: (id: number, body: StrategyInstanceUpdate) =>
-    request<StrategyInstance>(`/strategies/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
-  backtest: (body: BacktestRequest) =>
-    request<BacktestResult>("/strategies/backtest", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  backtestCompare: (body: BacktestCompareRequest) =>
-    request<BacktestCompareResult>("/strategies/backtest/compare", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  backtestUniverses: (locale?: Locale) =>
-    request<BacktestUniverse[]>("/strategies/backtest/universes", undefined, locale),
-  createBatchBacktest: (body: BatchBacktestRequest) =>
-    request<BatchBacktestJob>("/strategies/backtest/batch", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  latestBatchBacktest: () =>
-    request<BatchBacktestJob | null>("/strategies/backtest/batch/latest"),
-  batchBacktest: (jobId: string) =>
-    request<BatchBacktestJob>(`/strategies/backtest/batch/${jobId}`),
-  batchBacktestReport: (jobId: string) =>
-    request<BatchBacktestReport>(`/strategies/backtest/batch/${jobId}/report`),
-  cancelBatchBacktest: (jobId: string) =>
-    request<BatchBacktestJob>(`/strategies/backtest/batch/${jobId}`, {
-      method: "DELETE",
-    }),
+    // Auth
+    setupStatus: () =>
+      request<SetupStatus>("/auth/setup-status", undefined, undefined, headerProvider),
+    setup: (body: AuthCredentials) =>
+      request<AuthUser>("/auth/setup", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }, undefined, headerProvider),
+    login: (body: AuthCredentials) =>
+      request<AuthUser>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }, undefined, headerProvider),
+    logout: () =>
+      request<{ ok: boolean }>("/auth/logout", { method: "POST" }, undefined, headerProvider),
+    me: () => request<AuthUser>("/auth/me", undefined, undefined, headerProvider),
 
-  // Orders
-  listOrders: () => request<Order[]>("/orders"),
-  createOrder: (body: OrderCreate) =>
-    request<Order>("/orders", { method: "POST", body: JSON.stringify(body) }),
+    // Strategies
+    availableStrategies: (locale?: Locale) =>
+      request<StrategyDescriptor[]>("/strategies/available", undefined, locale, headerProvider),
+    listStrategies: () => request<StrategyInstance[]>("/strategies", undefined, undefined, headerProvider),
+    createStrategy: (body: StrategyInstanceCreate) =>
+      request<StrategyInstance>("/strategies", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }, undefined, headerProvider),
+    updateStrategy: (id: number, body: StrategyInstanceUpdate) =>
+      request<StrategyInstance>(`/strategies/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }, undefined, headerProvider),
+    backtest: (body: BacktestRequest) =>
+      request<BacktestResult>("/strategies/backtest", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }, undefined, headerProvider),
+    backtestCompare: (body: BacktestCompareRequest) =>
+      request<BacktestCompareResult>("/strategies/backtest/compare", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }, undefined, headerProvider),
+    backtestUniverses: (locale?: Locale) =>
+      request<BacktestUniverse[]>("/strategies/backtest/universes", undefined, locale, headerProvider),
+    createBatchBacktest: (body: BatchBacktestRequest) =>
+      request<BatchBacktestJob>("/strategies/backtest/batch", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }, undefined, headerProvider),
+    latestBatchBacktest: () =>
+      request<BatchBacktestJob | null>("/strategies/backtest/batch/latest", undefined, undefined, headerProvider),
+    batchBacktest: (jobId: string) =>
+      request<BatchBacktestJob>(`/strategies/backtest/batch/${jobId}`, undefined, undefined, headerProvider),
+    batchBacktestReport: (jobId: string) =>
+      request<BatchBacktestReport>(`/strategies/backtest/batch/${jobId}/report`, undefined, undefined, headerProvider),
+    cancelBatchBacktest: (jobId: string) =>
+      request<BatchBacktestJob>(`/strategies/backtest/batch/${jobId}`, {
+        method: "DELETE",
+      }, undefined, headerProvider),
 
-  // Portfolio & market
-  listPositions: () => request<Position[]>("/positions"),
-  account: () => request<Account>("/account"),
-  quote: (symbol: string) => request<Quote>(`/market/quote/${symbol}`),
-  marketBars: (
-    symbols: string[],
-    options: { timeframe?: string; lookback_days?: number } = {}
-  ) => {
-    const params = new URLSearchParams({
-      symbols: symbols.join(","),
-      timeframe: options.timeframe ?? "1Day",
-      lookback_days: String(options.lookback_days ?? 90),
-    });
-    return request<MarketBarsResponse>(`/market/bars?${params}`);
-  },
-  marketClock: () => request<{ is_open: boolean }>("/market/clock"),
-};
+    // Orders
+    listOrders: () => request<Order[]>("/orders", undefined, undefined, headerProvider),
+    createOrder: (body: OrderCreate) =>
+      request<Order>("/orders", { method: "POST", body: JSON.stringify(body) }, undefined, headerProvider),
+
+    // Portfolio & market
+    listPositions: () => request<Position[]>("/positions", undefined, undefined, headerProvider),
+    account: () => request<Account>("/account", undefined, undefined, headerProvider),
+    quote: (symbol: string) => request<Quote>(`/market/quote/${symbol}`, undefined, undefined, headerProvider),
+    marketBars: (
+      symbols: string[],
+      options: { timeframe?: string; lookback_days?: number } = {}
+    ) => {
+      const params = new URLSearchParams({
+        symbols: symbols.join(","),
+        timeframe: options.timeframe ?? "1Day",
+        lookback_days: String(options.lookback_days ?? 90),
+      });
+      return request<MarketBarsResponse>(`/market/bars?${params}`, undefined, undefined, headerProvider);
+    },
+    marketClock: () => request<{ is_open: boolean }>("/market/clock", undefined, undefined, headerProvider),
+  };
+}
+
+export const api = createApiClient();

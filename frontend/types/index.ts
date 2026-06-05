@@ -114,6 +114,20 @@ export interface Account {
   buying_power: number;
 }
 
+export interface AuthUser {
+  id: number;
+  email: string;
+}
+
+export interface AuthCredentials {
+  email: string;
+  password: string;
+}
+
+export interface SetupStatus {
+  needs_setup: boolean;
+}
+
 export interface BacktestRequest {
   strategy_key: string;
   params?: Record<string, unknown>;
@@ -121,6 +135,30 @@ export interface BacktestRequest {
   timeframe?: string;
   lookback_days?: number;
   initial_capital?: number;
+  position_size_pct?: number;
+  position_sizing?: PositionSizingConfig;
+}
+
+export type PositionSizingMethod =
+  | "fixed_target"
+  | "fixed_risk"
+  | "atr_risk"
+  | "pyramiding"
+  | "equal_weight"
+  | "volatility_target";
+
+export interface PositionSizingConfig {
+  method: PositionSizingMethod;
+  target_pct: number;
+  risk_amount: number;
+  stop_loss_pct: number;
+  atr_period: number;
+  atr_multiple: number;
+  tranche_pct: number;
+  max_position_pct: number;
+  universe_size: number;
+  target_volatility_pct: number;
+  volatility_lookback: number;
 }
 
 export interface EquityPoint {
@@ -133,6 +171,8 @@ export interface BacktestResult {
   symbol: string;
   strategy_key: string;
   initial_capital: number;
+  position_size_pct: number;
+  position_sizing: PositionSizingConfig;
   final_equity: number;
   total_return_pct: number;
   buy_hold_return_pct: number;
@@ -157,6 +197,8 @@ export interface BacktestCompareRequest {
   timeframe?: string;
   lookback_days?: number;
   initial_capital?: number;
+  position_size_pct?: number;
+  position_sizing?: PositionSizingConfig;
 }
 
 export interface BacktestCompareResult {
@@ -185,6 +227,8 @@ export interface BatchBacktestRequest {
   timeframe?: string;
   lookback_days?: number;
   initial_capital?: number;
+  position_size_pct?: number;
+  position_sizing?: PositionSizingConfig;
 }
 
 export interface BatchBacktestJob {
@@ -195,6 +239,8 @@ export interface BatchBacktestJob {
   timeframe: string;
   lookback_days: number;
   initial_capital: number;
+  position_size_pct: number;
+  position_sizing: PositionSizingConfig;
   universes: string[];
   symbols: string[];
   total_symbols: number;

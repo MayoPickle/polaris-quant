@@ -14,6 +14,10 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
+  DEFAULT_POSITION_SIZING,
+  PositionSizingFields,
+} from "@/components/position-sizing-fields";
+import {
   Table,
   TableBody,
   TableCell,
@@ -66,6 +70,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
     { ...makeRow(strategies), params: { ...paramsFor(strategies[0]), fast: 5, slow: 20 } },
   ]);
   const [lookback, setLookback] = useState(365);
+  const [positionSizing, setPositionSizing] = useState(DEFAULT_POSITION_SIZING);
   const [results, setResults] = useState<BacktestResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +89,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
     try {
       const res = await api.backtestCompare({
         lookback_days: lookback,
+        position_sizing: positionSizing,
         timeframe: "1Day",
         runs: rows.map((r) => ({
           label: labelFor(r),
@@ -208,6 +214,12 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
             {loading ? t.common.running : t.backtestCompare.runComparison}
           </Button>
         </div>
+
+        <PositionSizingFields
+          value={positionSizing}
+          onChange={setPositionSizing}
+          className="xl:grid-cols-6"
+        />
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 

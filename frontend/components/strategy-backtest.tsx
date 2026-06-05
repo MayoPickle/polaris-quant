@@ -13,6 +13,10 @@ import {
 import { Play } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DEFAULT_POSITION_SIZING,
+  PositionSizingFields,
+} from "@/components/position-sizing-fields";
 import { Field, MetricGrid, MetricTile } from "@/components/workbench";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
@@ -36,6 +40,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
   const props = (strategy.param_schema?.properties as Record<string, ParamSpec>) ?? {};
   const [symbol, setSymbol] = useState("AAPL");
   const [lookback, setLookback] = useState(365);
+  const [positionSizing, setPositionSizing] = useState(DEFAULT_POSITION_SIZING);
   const [params, setParams] = useState<Record<string, number>>(() => initialParams(strategy));
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -53,6 +58,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
           symbol: symbol.trim().toUpperCase(),
           timeframe: "1Day",
           lookback_days: lookback,
+          position_sizing: positionSizing,
         })
       );
     } catch {
@@ -76,6 +82,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
           pos: result.alpha_return_pct >= 0,
         },
         { label: t.strategyBacktest.finalEquity, value: usd(result.final_equity) },
+        { label: t.strategyBacktest.positionSizeShort, value: `${result.position_size_pct.toFixed(0)}%` },
         { label: t.strategyBacktest.trades, value: String(result.num_trades) },
         { label: t.strategyBacktest.winRate, value: `${result.win_rate_pct.toFixed(0)}%` },
         { label: t.strategyBacktest.maxDrawdown, value: `${result.max_drawdown_pct.toFixed(2)}%`, neg: true },
@@ -119,6 +126,11 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
             />
           </Field>
         ))}
+        <PositionSizingFields
+          value={positionSizing}
+          onChange={setPositionSizing}
+          className="col-span-2 sm:basis-full xl:grid-cols-6"
+        />
         <Button onClick={run} disabled={loading} className="col-span-2 w-full sm:w-auto">
           <Play data-icon="inline-start" />
           {loading ? t.common.running : t.strategyBacktest.run}
@@ -129,7 +141,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
 
       {result && (
         <>
-          <MetricGrid className="sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          <MetricGrid className="sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
             {metrics.map((m) => (
               <MetricTile
                 key={m.label}

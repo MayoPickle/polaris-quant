@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
+import { redirect } from "next/navigation";
 
 import { LanguageToggle } from "@/components/language-toggle";
 import { Logo } from "@/components/logo";
+import { LogoutButton } from "@/components/logout-button";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getDictionary } from "@/lib/i18n/dictionaries";
 import { getServerLocale } from "@/lib/i18n/server";
+import { serverApi } from "@/lib/server-api";
 
 export async function AppShell({
   title,
@@ -19,6 +22,12 @@ export async function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  try {
+    await serverApi.me();
+  } catch {
+    redirect("/login");
+  }
+
   const locale = await getServerLocale();
   const t = getDictionary(locale);
 
@@ -42,6 +51,7 @@ export async function AppShell({
             <div className="flex items-center gap-2">
               <LanguageToggle />
               <ThemeToggle />
+              <LogoutButton compact />
             </div>
           </div>
         </header>
@@ -61,6 +71,7 @@ export async function AppShell({
               </div>
               <div className="flex items-center gap-2 md:justify-end">
                 {actions}
+                <LogoutButton />
               </div>
             </div>
           </header>

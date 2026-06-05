@@ -39,6 +39,8 @@ class BacktestJob(Base, TimestampMixin):
     timeframe: Mapped[str] = mapped_column(String(16), default="1Day")
     lookback_days: Mapped[int] = mapped_column(Integer, default=365)
     initial_capital: Mapped[float] = mapped_column(Float, default=100_000.0)
+    position_size_pct: Mapped[float] = mapped_column(Float, default=20.0)
+    position_sizing: Mapped[dict] = mapped_column(JSON, default=dict)
 
     universes: Mapped[list] = mapped_column(JSON, default=list)
     symbols: Mapped[list] = mapped_column(JSON, default=list)

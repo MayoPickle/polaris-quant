@@ -24,10 +24,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  DEFAULT_POSITION_SIZING,
+  PositionSizingFields,
+} from "@/components/position-sizing-fields";
 import { Field, WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
-import { batchStatusLabel, formatCurrency } from "@/lib/i18n/format";
+import {
+  batchStatusLabel,
+  formatCurrency,
+  positionSizingMethodLabel,
+} from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 import type {
   BacktestUniverse,
@@ -92,6 +100,7 @@ export function BatchBacktest({
   const [lookback, setLookback] = useState(365);
   const [timeframe, setTimeframe] = useState("1Day");
   const [initialCapital, setInitialCapital] = useState(100_000);
+  const [positionSizing, setPositionSizing] = useState(DEFAULT_POSITION_SIZING);
   const [job, setJob] = useState<BatchBacktestJob | null>(null);
   const [report, setReport] = useState<BatchBacktestReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -189,6 +198,7 @@ export function BatchBacktest({
         timeframe,
         lookback_days: lookback,
         initial_capital: initialCapital,
+        position_sizing: positionSizing,
       });
       setJob(next);
       const searchParams = new URLSearchParams(window.location.search);
@@ -303,6 +313,12 @@ export function BatchBacktest({
                 />
               </Field>
             </div>
+
+            <PositionSizingFields
+              value={positionSizing}
+              onChange={setPositionSizing}
+              className="xl:grid-cols-6"
+            />
 
             {Object.keys(props).length > 0 && (
               <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -447,6 +463,18 @@ export function BatchBacktest({
               <Metric label={t.batchBacktest.succeeded} value={String(job?.succeeded_symbols ?? 0)} />
               <Metric label={t.batchBacktest.failed} value={String(job?.failed_symbols ?? 0)} />
               <Metric label={t.batchBacktest.status} value={batchStatusLabel(job?.status, locale)} />
+              <Metric
+                label={t.positionSizing.model}
+                value={
+                  job
+                    ? positionSizingMethodLabel(job.position_sizing.method, locale)
+                    : positionSizingMethodLabel(positionSizing.method, locale)
+                }
+              />
+              <Metric
+                label={t.batchBacktest.positionSizeShort}
+                value={job ? `${job.position_size_pct.toFixed(0)}%` : "0%"}
+              />
             </dl>
 
             {job?.status === "completed" && !report && (
@@ -489,7 +517,9 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
             <h3 className="text-base font-semibold">{t.batchBacktest.reportTitle}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {report.job.strategy_key} · {report.job.timeframe} ·{" "}
-              {report.job.lookback_days} days · {usd(report.job.initial_capital)}
+              {report.job.lookback_days} days · {usd(report.job.initial_capital)} ·{" "}
+              {positionSizingMethodLabel(report.job.position_sizing.method, locale)} ·{" "}
+              {report.job.position_size_pct.toFixed(0)}%
             </p>
           </div>
           <Badge variant={report.job.status === "completed" ? "default" : "secondary"}>

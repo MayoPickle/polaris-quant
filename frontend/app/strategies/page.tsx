@@ -3,10 +3,10 @@ import { AutomatedTrading } from "@/components/automated-trading";
 import { BacktestCompare } from "@/components/backtest-compare";
 import { BatchBacktest } from "@/components/batch-backtest";
 import { StrategyCatalog } from "@/components/strategy-catalog";
-import { api } from "@/lib/api";
 import { getDictionary } from "@/lib/i18n/dictionaries";
 import { getServerLocale } from "@/lib/i18n/server";
 import { safe } from "@/lib/safe";
+import { serverApi as api } from "@/lib/server-api";
 
 export default async function StrategiesPage() {
   const locale = await getServerLocale();

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrategyDescriptor(BaseModel):
@@ -51,6 +51,36 @@ class StrategyInstanceRead(BaseModel):
     last_error: str | None = None
 
 
+PositionSizingMethod = Literal[
+    "fixed_target",
+    "fixed_risk",
+    "atr_risk",
+    "pyramiding",
+    "equal_weight",
+    "volatility_target",
+]
+
+
+class PositionSizingConfig(BaseModel):
+    method: PositionSizingMethod = "fixed_target"
+    target_pct: float = Field(default=20, gt=0, le=100)
+    risk_amount: float = Field(default=1_000, gt=0)
+    stop_loss_pct: float = Field(default=5, gt=0, le=100)
+    atr_period: int = Field(default=14, ge=2, le=252)
+    atr_multiple: float = Field(default=2, gt=0, le=20)
+    tranche_pct: float = Field(default=10, gt=0, le=100)
+    max_position_pct: float = Field(default=40, gt=0, le=100)
+    universe_size: int = Field(default=10, ge=1, le=1000)
+    target_volatility_pct: float = Field(default=12, gt=0, le=200)
+    volatility_lookback: int = Field(default=20, ge=2, le=252)
+
+    @model_validator(mode="after")
+    def validate_pyramiding(self) -> "PositionSizingConfig":
+        if self.method == "pyramiding" and self.tranche_pct > self.max_position_pct:
+            raise ValueError("tranche_pct must be less than or equal to max_position_pct.")
+        return self
+
+
 class BacktestRequest(BaseModel):
     strategy_key: str
     params: dict = Field(default_factory=dict)
@@ -58,6 +88,8 @@ class BacktestRequest(BaseModel):
     timeframe: str = "1Day"
     lookback_days: int = Field(default=365, ge=5, le=2000)
     initial_capital: float = Field(default=100_000, gt=0)
+    position_size_pct: float = Field(default=20, gt=0, le=100)
+    position_sizing: PositionSizingConfig | None = None
 
 
 class EquityPoint(BaseModel):
@@ -70,6 +102,8 @@ class BacktestResultRead(BaseModel):
     symbol: str
     strategy_key: str
     initial_capital: float
+    position_size_pct: float
+    position_sizing: dict
     final_equity: float
     total_return_pct: float
     buy_hold_return_pct: float
@@ -94,6 +128,8 @@ class BacktestCompareRequest(BaseModel):
     timeframe: str = "1Day"
     lookback_days: int = Field(default=365, ge=5, le=2000)
     initial_capital: float = Field(default=100_000, gt=0)
+    position_size_pct: float = Field(default=20, gt=0, le=100)
+    position_sizing: PositionSizingConfig | None = None
 
 
 class BacktestCompareResult(BaseModel):
@@ -115,6 +151,8 @@ class BatchBacktestRequest(BaseModel):
     timeframe: str = "1Day"
     lookback_days: int = Field(default=365, ge=5, le=2000)
     initial_capital: float = Field(default=100_000, gt=0)
+    position_size_pct: float = Field(default=20, gt=0, le=100)
+    position_sizing: PositionSizingConfig | None = None
 
 
 class BatchBacktestJobRead(BaseModel):
@@ -127,6 +165,8 @@ class BatchBacktestJobRead(BaseModel):
     timeframe: str
     lookback_days: int
     initial_capital: float
+    position_size_pct: float
+    position_sizing: dict
     universes: list[str]
     symbols: list[str]
     total_symbols: int

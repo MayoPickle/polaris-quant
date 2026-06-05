@@ -9,7 +9,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState, WorkbenchPanel } from "@/components/workbench";
-import { api } from "@/lib/api";
 import {
   formatCurrency,
   orderSideLabel,
@@ -19,6 +18,7 @@ import {
 import { getDictionary } from "@/lib/i18n/dictionaries";
 import { getServerLocale } from "@/lib/i18n/server";
 import { safe } from "@/lib/safe";
+import { serverApi as api } from "@/lib/server-api";
 
 function statusVariant(
   status: string

@@ -3,9 +3,10 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_broker_client
+from app.api.deps import get_broker_client, get_current_user_id
 from app.brokers.base import Account, Bar, OrderRequest, OrderResult, Position, Quote
 from app.main import app
 from app.strategies import registry
@@ -70,6 +71,15 @@ def broker_override(broker: FakeMarketBroker) -> Iterator[None]:
         app.dependency_overrides.pop(get_broker_client, None)
 
 
+@contextmanager
+def auth_override(user_id: int = 1) -> Iterator[None]:
+    app.dependency_overrides[get_current_user_id] = lambda: user_id
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+
+
 def test_health() -> None:
     resp = client.get("/api/v1/health")
     assert resp.status_code == 200
@@ -77,17 +87,23 @@ def test_health() -> None:
 
 
 def test_available_strategies_includes_sma_cross() -> None:
-    resp = client.get("/api/v1/strategies/available")
+    with auth_override():
+        resp = client.get("/api/v1/strategies/available")
     assert resp.status_code == 200
     keys = {s["key"] for s in resp.json()}
     assert "sma_cross" in keys
 
 
 def test_available_strategies_localizes_display_metadata() -> None:
-    zh_resp = client.get(
-        "/api/v1/strategies/available",
-        headers={"Accept-Language": "zh-CN,zh;q=0.9"},
-    )
+    with auth_override():
+        zh_resp = client.get(
+            "/api/v1/strategies/available",
+            headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+        )
+        fallback_resp = client.get(
+            "/api/v1/strategies/available",
+            headers={"Accept-Language": "fr-FR"},
+        )
     assert zh_resp.status_code == 200
     zh_strategies = {s["key"]: s for s in zh_resp.json()}
     assert zh_strategies["sma_cross"]["name"] == "SMA 均线交叉"
@@ -97,10 +113,6 @@ def test_available_strategies_localizes_display_metadata() -> None:
         == "快线周期"
     )
 
-    fallback_resp = client.get(
-        "/api/v1/strategies/available",
-        headers={"Accept-Language": "fr-FR"},
-    )
     assert fallback_resp.status_code == 200
     fallback_strategies = {s["key"]: s for s in fallback_resp.json()}
     assert fallback_strategies["sma_cross"]["name"] == "SMA Crossover"
@@ -111,20 +123,21 @@ def test_available_strategies_localizes_display_metadata() -> None:
 
 
 def test_backtest_universes_localize_display_metadata() -> None:
-    zh_resp = client.get(
-        "/api/v1/strategies/backtest/universes",
-        headers={"Accept-Language": "zh-CN"},
-    )
+    with auth_override():
+        zh_resp = client.get(
+            "/api/v1/strategies/backtest/universes",
+            headers={"Accept-Language": "zh-CN"},
+        )
+        en_resp = client.get(
+            "/api/v1/strategies/backtest/universes",
+            headers={"Accept-Language": "en-US"},
+        )
     assert zh_resp.status_code == 200
     zh_universes = {u["key"]: u for u in zh_resp.json()}
     assert zh_universes["sp500"]["name"] == "S&P 500"
     assert zh_universes["sp500"]["description"] == "来自公开 CSV 数据集的当前 S&P 500 成分股。"
     assert zh_universes["dow30"]["description"] == "道琼斯工业平均指数成分股。"
 
-    en_resp = client.get(
-        "/api/v1/strategies/backtest/universes",
-        headers={"Accept-Language": "en-US"},
-    )
     assert en_resp.status_code == 200
     en_universes = {u["key"]: u for u in en_resp.json()}
     assert en_universes["sp500"]["description"] == (
@@ -134,7 +147,7 @@ def test_backtest_universes_localize_display_metadata() -> None:
 
 def test_market_bars_returns_normalized_series() -> None:
     broker = FakeMarketBroker()
-    with broker_override(broker):
+    with auth_override(), broker_override(broker):
         resp = client.get(
             "/api/v1/market/bars?symbols=aapl, MSFT, aapl&timeframe=1Day&lookback_days=90"
         )
@@ -153,7 +166,7 @@ def test_market_bars_returns_normalized_series() -> None:
 
 def test_market_bars_rejects_invalid_inputs() -> None:
     broker = FakeMarketBroker()
-    with broker_override(broker):
+    with auth_override(), broker_override(broker):
         invalid_symbol = client.get("/api/v1/market/bars?symbols=AAPL,$BAD")
         invalid_lookback = client.get("/api/v1/market/bars?symbols=AAPL&lookback_days=366")
 
@@ -189,10 +202,89 @@ def test_backtest_runs_and_reports_metrics() -> None:
     assert result.symbol == "AAPL"
     assert len(result.equity_curve) == len(bars)
     assert result.num_trades >= 1
-    assert result.buy_hold_return_pct == 100.0
-    assert result.alpha_return_pct == round(result.total_return_pct - 100.0, 2)
-    # Equity should never go negative in a long-only, all-cash sim.
+    assert result.position_size_pct == 20.0
+    assert result.buy_hold_return_pct == 20.0
+    assert result.alpha_return_pct == round(result.total_return_pct - 20.0, 2)
+    # Equity should never go negative in a long-only fixed-allocation sim.
     assert all(p["equity"] > 0 for p in result.equity_curve)
+
+
+def test_backtest_uses_target_position_size_for_new_positions() -> None:
+    from app.brokers.base import Bar
+    from app.strategies.backtest import run_backtest
+    from app.strategies.base import Signal, Strategy
+
+    class AlwaysBuy(Strategy):
+        key = "always_buy"
+
+        def generate_signals(self, bars_by_symbol):  # noqa: ANN001, ANN201
+            symbol = next(iter(bars_by_symbol))
+            return [Signal(symbol=symbol, side="buy")]
+
+    bars = [
+        Bar(timestamp="2026-01-01T00:00:00", open=100, high=100, low=100, close=100, volume=1000),
+        Bar(timestamp="2026-01-02T00:00:00", open=100, high=100, low=100, close=100, volume=1000),
+        Bar(timestamp="2026-01-03T00:00:00", open=90, high=90, low=90, close=90, volume=1000),
+    ]
+
+    result = run_backtest(
+        AlwaysBuy(),
+        "AAPL",
+        bars,
+        initial_capital=100_000,
+        position_size_pct=20,
+    )
+
+    assert result.position_size_pct == 20
+    assert result.trades[0]["qty"] == 200
+    assert result.final_equity == 98_000
+    assert result.total_return_pct == -2.0
+    assert result.max_drawdown_pct == 2.0
+
+
+def test_backtest_buy_hold_benchmark_uses_same_position_size() -> None:
+    from app.brokers.base import Bar
+    from app.strategies.backtest import run_backtest
+    from app.strategies.base import Signal, Strategy
+
+    class AlwaysBuy(Strategy):
+        key = "always_buy"
+
+        def generate_signals(self, bars_by_symbol):  # noqa: ANN001, ANN201
+            symbol = next(iter(bars_by_symbol))
+            return [Signal(symbol=symbol, side="buy")]
+
+    bars = [
+        Bar(timestamp="2026-01-01T00:00:00", open=100, high=100, low=100, close=100, volume=1000),
+        Bar(timestamp="2026-01-02T00:00:00", open=200, high=200, low=200, close=200, volume=1000),
+    ]
+
+    result = run_backtest(
+        AlwaysBuy(),
+        "AAPL",
+        bars,
+        initial_capital=100_000,
+        position_size_pct=20,
+    )
+
+    assert result.final_equity == 120_000
+    assert result.total_return_pct == 20.0
+    assert result.buy_hold_return_pct == 20.0
+    assert result.alpha_return_pct == 0.0
+
+
+def test_backtest_rejects_invalid_position_size() -> None:
+    from app.brokers.base import Bar
+    from app.strategies.backtest import run_backtest
+
+    strat = registry.create_strategy("sma_cross", {"fast": 2, "slow": 3, "qty": 1})
+    bars = [
+        Bar(timestamp=f"2026-01-{i + 1:02d}T00:00:00", open=100, high=100, low=100, close=100, volume=1000)
+        for i in range(5)
+    ]
+
+    with pytest.raises(ValueError, match="target_pct"):
+        run_backtest(strat, "AAPL", bars, position_size_pct=0)
 
 
 def test_all_registered_strategies_backtest_cleanly() -> None:

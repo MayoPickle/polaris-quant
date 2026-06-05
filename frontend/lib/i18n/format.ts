@@ -49,6 +49,11 @@ export function batchStatusLabel(status: string | null | undefined, locale: Loca
   return labels[status ?? "idle"] ?? humanize(status ?? "idle");
 }
 
+export function positionSizingMethodLabel(method: string | null | undefined, locale: Locale) {
+  const labels = getDictionary(locale).enums.positionSizingMethod as Record<string, string>;
+  return labels[method ?? "fixed_target"] ?? humanize(method ?? "fixed_target");
+}
+
 export function marketSessionLabel(isOpen: boolean | null | undefined, locale: Locale) {
   const labels = getDictionary(locale).enums.marketSession;
   if (isOpen === undefined || isOpen === null) return labels.unknown;

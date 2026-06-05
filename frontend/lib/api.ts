@@ -24,8 +24,22 @@ import type {
 } from "@/types";
 import type { Locale } from "@/lib/i18n/config";
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const PUBLIC_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api/v1";
+const SERVER_BASE_URL =
+  process.env.SERVER_API_BASE_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  "http://localhost:8000/api/v1";
+
+function trimTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function apiBaseUrl(): string {
+  return trimTrailingSlash(
+    typeof window === "undefined" ? SERVER_BASE_URL : PUBLIC_BASE_URL
+  );
+}
 
 async function request<T>(
   path: string,
@@ -36,7 +50,7 @@ async function request<T>(
   headers.set("Content-Type", "application/json");
   if (locale) headers.set("Accept-Language", locale);
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${apiBaseUrl()}${path}`, {
     cache: "no-store",
     ...init,
     headers,

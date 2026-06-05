@@ -12,10 +12,10 @@ export const dictionaries = {
       zh: "中",
       en: "EN",
       switchToZh: "切换到中文",
-      switchToEn: "Switch to English",
+      switchToEn: "切换到英文",
     },
     theme: {
-      toggle: "切换主题",
+      toggle: "切换明暗模式",
     },
     nav: {
       overview: "总览",
@@ -28,6 +28,7 @@ export const dictionaries = {
       primaryNavigation: "主导航",
       sessionTitle: "会话",
       sessionDescription: "经纪商数据、策略运行与账户状态按交易流程归集。",
+      preferencesTitle: "界面偏好",
     },
     common: {
       apiOnline: "API 在线",
@@ -388,11 +389,11 @@ export const dictionaries = {
       label: "Language",
       zh: "中",
       en: "EN",
-      switchToZh: "切换到中文",
+      switchToZh: "Switch to Chinese",
       switchToEn: "Switch to English",
     },
     theme: {
-      toggle: "Toggle theme",
+      toggle: "Toggle color mode",
     },
     nav: {
       overview: "Overview",
@@ -406,6 +407,7 @@ export const dictionaries = {
       sessionTitle: "Session",
       sessionDescription:
         "Broker data, strategy runs, and account state stay grouped by workflow.",
+      preferencesTitle: "Display",
     },
     common: {
       apiOnline: "API online",

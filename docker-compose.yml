@@ -46,8 +46,8 @@ services:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
       REDIS_URL: redis://redis:6379/0
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -91,14 +91,23 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api/v1}
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
-      NEXT_PUBLIC_API_BASE_URL: ${SERVER_API_BASE_URL:-http://api:8000/api/v1}
-    ports:
-      - "3001:3000"
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api/v1}
+      SERVER_API_BASE_URL: ${SERVER_API_BASE_URL:-http://api:8000/api/v1}
     depends_on:
+      - api
+
+  edge:
+    image: nginx:1.27-alpine
+    ports:
+      - "3001:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
       - api
 
 volumes:

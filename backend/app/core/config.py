@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     BACKTEST_WORKER_MODE: Literal["simple", "fork"] = "simple"
     BACKTEST_JOB_TIMEOUT_SECONDS: int = 60 * 60 * 2
     BACKTEST_MAX_SYMBOLS: int = 750
+    BACKTEST_BATCH_CONCURRENCY: int = 16
     BACKTEST_SYMBOL_THROTTLE_SECONDS: float = 0.05
 
     # ---- Risk controls ----

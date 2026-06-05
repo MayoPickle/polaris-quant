@@ -34,8 +34,14 @@ export function AuthForm({
       }
       router.replace(nextPath || "/");
       router.refresh();
-    } catch {
-      setError(isSetup ? t.auth.setupError : t.auth.loginError);
+    } catch (exc) {
+      setError(
+        exc instanceof Error
+          ? exc.message
+          : isSetup
+            ? t.auth.setupError
+            : t.auth.loginError
+      );
     } finally {
       setLoading(false);
     }

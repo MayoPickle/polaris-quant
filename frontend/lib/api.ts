@@ -64,10 +64,28 @@ async function request<T>(
     headers,
   });
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`API ${res.status}: ${detail}`);
+    throw new Error(await responseErrorMessage(res));
   }
   return res.json() as Promise<T>;
+}
+
+async function responseErrorMessage(res: Response): Promise<string> {
+  const text = await res.text();
+  if (!text) return `API ${res.status}`;
+  try {
+    const payload = JSON.parse(text) as { detail?: unknown };
+    if (typeof payload.detail === "string") return payload.detail;
+    if (Array.isArray(payload.detail)) {
+      return payload.detail
+        .map((item) =>
+          typeof item?.msg === "string" ? item.msg : JSON.stringify(item)
+        )
+        .join("; ");
+    }
+  } catch {
+    // Fall through to raw text below.
+  }
+  return text;
 }
 
 export function createApiClient(headerProvider?: HeaderProvider) {

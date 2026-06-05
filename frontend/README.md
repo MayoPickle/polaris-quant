@@ -17,7 +17,7 @@ npx shadcn@latest add button card dialog input table badge
 Set the API base URL in `frontend/.env.local`:
 
 ```
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
+NEXT_PUBLIC_API_BASE_URL=/api/v1
 ```
 
 ## Target structure

@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n/client";
 
 const subscribe = () => () => {};
 const getSnapshot = () => true;
@@ -12,6 +13,7 @@ const getServerSnapshot = () => false;
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
+  const { t } = useI18n();
   const mounted = useSyncExternalStore(
     subscribe,
     getSnapshot,
@@ -24,7 +26,7 @@ export function ThemeToggle() {
     <Button
       variant="outline"
       size="icon"
-      aria-label="Toggle theme"
+      aria-label={t.theme.toggle}
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >
       {mounted && isDark ? (

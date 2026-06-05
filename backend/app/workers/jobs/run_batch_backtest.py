@@ -141,6 +141,8 @@ def _replace_result(db: Session, row: BacktestJobResult) -> None:
         existing.error = row.error
         existing.final_equity = row.final_equity
         existing.total_return_pct = row.total_return_pct
+        existing.buy_hold_return_pct = row.buy_hold_return_pct
+        existing.alpha_return_pct = row.alpha_return_pct
         existing.num_trades = row.num_trades
         existing.win_rate_pct = row.win_rate_pct
         existing.max_drawdown_pct = row.max_drawdown_pct

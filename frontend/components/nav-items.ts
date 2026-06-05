@@ -6,19 +6,22 @@ import {
   ListOrdered,
   Search,
 } from "lucide-react";
+import type { Dictionary } from "@/lib/i18n/dictionaries";
+
+type NavLabelKey = keyof Dictionary["nav"];
 
 export type NavItem = {
-  label: string;
+  labelKey: NavLabelKey;
   href: string;
   icon: LucideIcon;
 };
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Overview", href: "/", icon: LayoutDashboard },
-  { label: "Strategies", href: "/strategies", icon: BrainCircuit },
-  { label: "Portfolio", href: "/portfolio", icon: BriefcaseBusiness },
-  { label: "Orders", href: "/orders", icon: ListOrdered },
-  { label: "Market", href: "/market", icon: Search },
+  { labelKey: "overview", href: "/", icon: LayoutDashboard },
+  { labelKey: "strategies", href: "/strategies", icon: BrainCircuit },
+  { labelKey: "portfolio", href: "/portfolio", icon: BriefcaseBusiness },
+  { labelKey: "orders", href: "/orders", icon: ListOrdered },
+  { labelKey: "market", href: "/market", icon: Search },
 ];
 
 export function isNavItemActive(pathname: string, href: string) {

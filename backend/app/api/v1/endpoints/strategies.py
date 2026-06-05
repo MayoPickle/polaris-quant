@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from apscheduler.triggers.cron import CronTrigger
 from rq.job import Job
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_broker_client, get_current_user_id
 from app.brokers.base import BrokerClient
 from app.core.config import settings
+from app.core.i18n import negotiate_locale
 from app.db.session import get_db
 from app.models.backtest import BacktestJob, BacktestJobResult
 from app.models.strategy import StrategyInstance
@@ -38,23 +39,32 @@ from app.services.backtest_batch_service import (
 )
 from app.strategies import registry
 from app.strategies.backtest import BacktestResult, run_backtest
+from app.strategies.metadata_i18n import localized_strategy_metadata
 from app.workers.queue import enqueue_batch_backtest, get_redis_connection
 
 router = APIRouter()
 
 
 @router.get("/available", response_model=list[StrategyDescriptor])
-def list_available_strategies() -> list[StrategyDescriptor]:
+def list_available_strategies(
+    accept_language: str | None = Header(default=None),
+) -> list[StrategyDescriptor]:
     """Strategies the user can pick from, with their parameter schema."""
+    locale = negotiate_locale(accept_language)
     return [
-        StrategyDescriptor(
-            key=cls.key,
-            name=cls.name,
-            description=cls.description,
-            param_schema=cls.param_schema,
-        )
+        _strategy_descriptor(cls, locale)
         for cls in registry.list_strategies()
     ]
+
+
+def _strategy_descriptor(cls, locale: str) -> StrategyDescriptor:
+    name, description, param_schema = localized_strategy_metadata(cls, locale)
+    return StrategyDescriptor(
+        key=cls.key,
+        name=name,
+        description=description,
+        param_schema=param_schema,
+    )
 
 
 @router.get("", response_model=list[StrategyInstanceRead])
@@ -263,8 +273,11 @@ def backtest_compare(
 
 
 @router.get("/backtest/universes", response_model=list[BacktestUniverseRead])
-def backtest_universes() -> list[BacktestUniverseRead]:
-    return [BacktestUniverseRead(**u) for u in list_universes()]
+def backtest_universes(
+    accept_language: str | None = Header(default=None),
+) -> list[BacktestUniverseRead]:
+    locale = negotiate_locale(accept_language)
+    return [BacktestUniverseRead(**u) for u in list_universes(locale)]
 
 
 @router.post("/backtest/batch", response_model=BatchBacktestJobRead, status_code=201)
@@ -320,6 +333,19 @@ def create_batch_backtest(
     db.commit()
     db.refresh(job)
     return job
+
+
+@router.get("/backtest/batch/latest", response_model=BatchBacktestJobRead | None)
+def get_latest_batch_backtest(
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+) -> BacktestJob | None:
+    return (
+        db.query(BacktestJob)
+        .filter(BacktestJob.user_id == user_id)
+        .order_by(BacktestJob.created_at.desc(), BacktestJob.id.desc())
+        .first()
+    )
 
 
 @router.get("/backtest/batch/{job_id}", response_model=BatchBacktestJobRead)

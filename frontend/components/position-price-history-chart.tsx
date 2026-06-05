@@ -12,22 +12,12 @@ import {
 } from "recharts";
 
 import { EmptyState } from "@/components/workbench";
+import { useI18n } from "@/lib/i18n/client";
+import { formatCurrency } from "@/lib/i18n/format";
 import type { MarketBarSeries } from "@/types";
 
 const COLORS = ["#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed"];
 const INITIAL_CHART_DIMENSION = { width: 600, height: 320 };
-
-const usd = (value: number) =>
-  value.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value >= 1000 ? 0 : 2,
-  });
-
-function compactUsd(value: number) {
-  if (Math.abs(value) >= 1000) return `$${(value / 1000).toFixed(0)}k`;
-  return `$${value.toFixed(0)}`;
-}
 
 function buildChartData(series: MarketBarSeries[]) {
   const byTimestamp = new Map<string, Record<string, number | string>>();
@@ -50,11 +40,12 @@ export function PositionPriceHistoryChart({
 }: {
   series: MarketBarSeries[];
 }) {
+  const { locale, t } = useI18n();
   const symbols = series.map((item) => item.symbol);
   const chartData = buildChartData(series);
 
   if (symbols.length === 0 || chartData.length === 0) {
-    return <EmptyState>No price history available.</EmptyState>;
+    return <EmptyState>{t.pages.overview.couldNotLoadPriceHistory}</EmptyState>;
   }
 
   return (
@@ -76,13 +67,20 @@ export function PositionPriceHistoryChart({
           />
           <YAxis
             domain={["auto", "auto"]}
-            tickFormatter={(value: number) => compactUsd(value)}
+            tickFormatter={(value: number) =>
+              formatCurrency(value, locale, {
+                notation: "compact",
+                maximumFractionDigits: 0,
+              })
+            }
             width={52}
             fontSize={12}
           />
           <Tooltip
             formatter={(value, name) => [
-              usd(Number(value ?? 0)),
+              formatCurrency(Number(value ?? 0), locale, {
+                maximumFractionDigits: Number(value ?? 0) >= 1000 ? 0 : 2,
+              }),
               String(name),
             ]}
             labelFormatter={(label) => String(label).slice(0, 10)}

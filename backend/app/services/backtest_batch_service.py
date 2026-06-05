@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import csv
 from io import StringIO
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from statistics import median
 
@@ -31,6 +31,7 @@ class UniverseDefinition:
     source_url: str = ""
     source_format: str = "csv"
     static_symbols: tuple[str, ...] = ()
+    translations: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 UNIVERSES: dict[str, UniverseDefinition] = {
@@ -41,6 +42,12 @@ UNIVERSES: dict[str, UniverseDefinition] = {
         source_url="https://raw.githubusercontent.com/datasets/s-and-p-500-companies/refs/heads/main/data/constituents.csv",
         source_format="csv",
         symbol_headers=("symbol", "ticker"),
+        translations={
+            "zh-CN": {
+                "name": "S&P 500",
+                "description": "来自公开 CSV 数据集的当前 S&P 500 成分股。",
+            }
+        },
     ),
     "nasdaq100": UniverseDefinition(
         key="nasdaq100",
@@ -49,6 +56,12 @@ UNIVERSES: dict[str, UniverseDefinition] = {
         source_url="https://raw.githubusercontent.com/Gary-Strauss/NASDAQ100_Constituents/master/data/nasdaq100_constituents.csv",
         source_format="csv",
         symbol_headers=("ticker", "symbol"),
+        translations={
+            "zh-CN": {
+                "name": "Nasdaq 100",
+                "description": "来自公开 CSV 数据集的当前 Nasdaq-100 成分股。",
+            }
+        },
     ),
     "dow30": UniverseDefinition(
         key="dow30",
@@ -56,6 +69,12 @@ UNIVERSES: dict[str, UniverseDefinition] = {
         description="Dow Jones Industrial Average components.",
         source_format="static",
         symbol_headers=("symbol", "ticker"),
+        translations={
+            "zh-CN": {
+                "name": "Dow 30",
+                "description": "道琼斯工业平均指数成分股。",
+            }
+        },
         static_symbols=(
             "AAPL",
             "AMGN",
@@ -179,9 +198,15 @@ def parse_imported_symbols(symbols: list[str] | None = None, symbols_text: str =
     return out
 
 
-def list_universes() -> list[dict[str, str]]:
+def list_universes(locale: str = "en-US") -> list[dict[str, str]]:
     return [
-        {"key": u.key, "name": u.name, "description": u.description}
+        {
+            "key": u.key,
+            "name": u.translations.get(locale, {}).get("name", u.name),
+            "description": u.translations.get(locale, {}).get(
+                "description", u.description
+            ),
+        }
         for u in UNIVERSES.values()
     ]
 
@@ -338,6 +363,8 @@ def result_from_backtest(job_id: str, result: BacktestResult) -> BacktestJobResu
         status="completed",
         final_equity=result.final_equity,
         total_return_pct=result.total_return_pct,
+        buy_hold_return_pct=result.buy_hold_return_pct,
+        alpha_return_pct=result.alpha_return_pct,
         num_trades=result.num_trades,
         win_rate_pct=result.win_rate_pct,
         max_drawdown_pct=result.max_drawdown_pct,
@@ -355,6 +382,10 @@ def build_batch_summary(job: BacktestJob, results: list[BacktestJobResult]) -> d
     completed = [r for r in results if r.status == "completed"]
     failed = [r for r in results if r.status == "failed"]
     returns = [r.total_return_pct for r in completed if r.total_return_pct is not None]
+    buy_hold_returns = [
+        r.buy_hold_return_pct for r in completed if r.buy_hold_return_pct is not None
+    ]
+    alphas = [r.alpha_return_pct for r in completed if r.alpha_return_pct is not None]
     sharpes = [r.sharpe for r in completed if r.sharpe is not None]
     drawdowns = [r.max_drawdown_pct for r in completed if r.max_drawdown_pct is not None]
 
@@ -366,6 +397,11 @@ def build_batch_summary(job: BacktestJob, results: list[BacktestJobResult]) -> d
     by_sharpe = sorted(
         completed,
         key=lambda r: r.sharpe if r.sharpe is not None else float("-inf"),
+        reverse=True,
+    )
+    by_alpha = sorted(
+        completed,
+        key=lambda r: r.alpha_return_pct if r.alpha_return_pct is not None else float("-inf"),
         reverse=True,
     )
     by_drawdown = sorted(
@@ -381,12 +417,19 @@ def build_batch_summary(job: BacktestJob, results: list[BacktestJobResult]) -> d
         "succeeded_symbols": job.succeeded_symbols,
         "failed_symbols": job.failed_symbols,
         "average_return_pct": round(sum(returns) / len(returns), 2) if returns else 0.0,
+        "average_buy_hold_return_pct": (
+            round(sum(buy_hold_returns) / len(buy_hold_returns), 2)
+            if buy_hold_returns
+            else 0.0
+        ),
+        "average_alpha_return_pct": round(sum(alphas) / len(alphas), 2) if alphas else 0.0,
         "median_return_pct": round(median(returns), 2) if returns else 0.0,
         "average_sharpe": round(sum(sharpes) / len(sharpes), 2) if sharpes else 0.0,
         "average_max_drawdown_pct": round(sum(drawdowns) / len(drawdowns), 2) if drawdowns else 0.0,
         "total_trades": sum(r.num_trades or 0 for r in completed),
         "best_return": _rank_rows(by_return[:10]),
         "worst_return": _rank_rows(list(reversed(by_return[-10:]))),
+        "best_alpha": _rank_rows(by_alpha[:10]),
         "best_sharpe": _rank_rows(by_sharpe[:10]),
         "lowest_drawdown": _rank_rows(by_drawdown[:10]),
         "representative_symbols": {
@@ -404,6 +447,8 @@ def _rank_rows(results: list[BacktestJobResult]) -> list[dict]:
         {
             "symbol": r.symbol,
             "total_return_pct": r.total_return_pct,
+            "buy_hold_return_pct": r.buy_hold_return_pct,
+            "alpha_return_pct": r.alpha_return_pct,
             "sharpe": r.sharpe,
             "max_drawdown_pct": r.max_drawdown_pct,
             "win_rate_pct": r.win_rate_pct,

@@ -1,11 +1,15 @@
 import type { MetadataRoute } from "next";
+import { getDictionary } from "@/lib/i18n/dictionaries";
+import { getServerLocale } from "@/lib/i18n/server";
 
-export default function manifest(): MetadataRoute.Manifest {
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const locale = await getServerLocale();
+  const t = getDictionary(locale);
+
   return {
-    name: "Polaris Quant",
+    name: t.app.name,
     short_name: "Polaris",
-    description:
-      "A mobile-ready dashboard for monitoring quantitative trading strategies.",
+    description: t.manifest.description,
     start_url: "/",
     scope: "/",
     display: "standalone",
@@ -39,9 +43,9 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       {
-        name: "Overview",
-        short_name: "Overview",
-        description: "Open the dashboard overview.",
+        name: t.nav.overview,
+        short_name: t.nav.overview,
+        description: t.manifest.shortcuts.overview,
         url: "/",
         icons: [
           {
@@ -52,9 +56,9 @@ export default function manifest(): MetadataRoute.Manifest {
         ],
       },
       {
-        name: "Strategies",
-        short_name: "Strategies",
-        description: "Open strategy configuration and backtests.",
+        name: t.nav.strategies,
+        short_name: t.nav.strategies,
+        description: t.manifest.shortcuts.strategies,
         url: "/strategies",
         icons: [
           {
@@ -65,9 +69,9 @@ export default function manifest(): MetadataRoute.Manifest {
         ],
       },
       {
-        name: "Portfolio",
-        short_name: "Portfolio",
-        description: "Open account balances and positions.",
+        name: t.nav.portfolio,
+        short_name: t.nav.portfolio,
+        description: t.manifest.shortcuts.portfolio,
         url: "/portfolio",
         icons: [
           {
@@ -78,9 +82,9 @@ export default function manifest(): MetadataRoute.Manifest {
         ],
       },
       {
-        name: "Orders",
-        short_name: "Orders",
-        description: "Open order history.",
+        name: t.nav.orders,
+        short_name: t.nav.orders,
+        description: t.manifest.shortcuts.orders,
         url: "/orders",
         icons: [
           {
@@ -91,9 +95,9 @@ export default function manifest(): MetadataRoute.Manifest {
         ],
       },
       {
-        name: "Market",
-        short_name: "Market",
-        description: "Open market status and quote lookup.",
+        name: t.nav.market,
+        short_name: t.nav.market,
+        description: t.manifest.shortcuts.market,
         url: "/market",
         icons: [
           {

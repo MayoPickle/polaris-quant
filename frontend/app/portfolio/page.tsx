@@ -15,12 +15,15 @@ import {
   WorkbenchPanel,
 } from "@/components/workbench";
 import { api } from "@/lib/api";
+import { formatCurrency } from "@/lib/i18n/format";
+import { getDictionary } from "@/lib/i18n/dictionaries";
+import { getServerLocale } from "@/lib/i18n/server";
 import { safe } from "@/lib/safe";
 
-const usd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-
 export default async function PortfolioPage() {
+  const locale = await getServerLocale();
+  const t = getDictionary(locale);
+  const usd = (n: number) => formatCurrency(n, locale);
   const [account, positions] = await Promise.all([
     safe(api.account()),
     safe(api.listPositions()),
@@ -32,25 +35,29 @@ export default async function PortfolioPage() {
   );
 
   const cards = [
-    { label: "Equity", value: account ? usd(account.equity) : "—" },
-    { label: "Cash", value: account ? usd(account.cash) : "—" },
-    { label: "Buying power", value: account ? usd(account.buying_power) : "—" },
+    { label: t.pages.overview.equity, value: account ? usd(account.equity) : "—" },
+    { label: t.pages.portfolio.cash, value: account ? usd(account.cash) : "—" },
+    { label: t.pages.overview.buyingPower, value: account ? usd(account.buying_power) : "—" },
     {
-      label: "Unrealized P/L",
+      label: t.pages.overview.unrealizedPl,
       value: positions ? usd(totalUnrealized) : "—",
       tone: totalUnrealized >= 0 ? "pos" : "neg",
     },
   ];
 
   return (
-    <AppShell title="Portfolio" subtitle="Account balances and open positions">
+    <AppShell title={t.pages.portfolio.title} subtitle={t.pages.portfolio.subtitle}>
       <MetricGrid>
         {cards.map((c) => (
           <MetricTile
             key={c.label}
             label={c.label}
             value={c.value}
-            detail={c.label === "Unrealized P/L" ? "Open positions" : "Account"}
+            detail={
+              c.label === t.pages.overview.unrealizedPl
+                ? t.pages.portfolio.openPositionsDetail
+                : t.common.account
+            }
             tone={
               c.tone === "pos"
                 ? "positive"
@@ -64,15 +71,14 @@ export default async function PortfolioPage() {
 
       {!account && (
         <p className="rounded-lg border border-dashed bg-card px-4 py-3 text-sm text-muted-foreground">
-          Account data unavailable — check that the broker credentials in the
-          backend are valid.
+          {t.pages.portfolio.brokerCredentialError}
         </p>
       )}
 
       <WorkbenchPanel
-        title="Open positions"
-        description="Symbol exposure, market value, and unrealized P/L."
-        actions={<Badge variant="outline">{(positions ?? []).length} symbols</Badge>}
+        title={t.pages.portfolio.openPositionsTitle}
+        description={t.pages.portfolio.openPositionsDescription}
+        actions={<Badge variant="outline">{(positions ?? []).length} {t.common.symbols}</Badge>}
         contentClassName="p-0"
       >
         <div className="md:hidden">
@@ -82,7 +88,7 @@ export default async function PortfolioPage() {
                   <div>
                     <p className="font-semibold">{p.symbol}</p>
                     <p className="text-xs text-muted-foreground">
-                      Qty {p.qty} · Avg {usd(p.avg_entry_price)}
+                      {t.common.qty} {p.qty} · {t.common.avg} {usd(p.avg_entry_price)}
                     </p>
                   </div>
                   <p
@@ -94,7 +100,7 @@ export default async function PortfolioPage() {
                   </p>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Market value</span>
+                  <span className="text-muted-foreground">{t.common.marketValue}</span>
                   <span className="font-medium">{usd(p.market_value)}</span>
                 </div>
             </div>
@@ -103,8 +109,8 @@ export default async function PortfolioPage() {
             <div className="p-4">
               <EmptyState>
                 {positions === null
-                  ? "Could not load positions (broker not connected)."
-                  : "No open positions."}
+                  ? t.pages.portfolio.couldNotLoadPositionsBroker
+                  : t.common.noPositions}
               </EmptyState>
             </div>
           )}
@@ -113,11 +119,11 @@ export default async function PortfolioPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Avg entry</TableHead>
-                  <TableHead className="text-right">Market value</TableHead>
-                  <TableHead className="text-right">Unrealized P/L</TableHead>
+                  <TableHead>{t.batchBacktest.symbol}</TableHead>
+                  <TableHead className="text-right">{t.common.qty}</TableHead>
+                  <TableHead className="text-right">{t.common.avgPrice}</TableHead>
+                  <TableHead className="text-right">{t.common.marketValue}</TableHead>
+                  <TableHead className="text-right">{t.pages.overview.unrealizedPl}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -147,8 +153,8 @@ export default async function PortfolioPage() {
                       className="py-8 text-center text-muted-foreground"
                     >
                       {positions === null
-                        ? "Could not load positions (broker not connected)."
-                        : "No open positions."}
+                        ? t.pages.portfolio.couldNotLoadPositionsBroker
+                        : t.common.noPositions}
                     </TableCell>
                   </TableRow>
                 )}

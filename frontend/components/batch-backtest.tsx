@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowUpDown, ChevronLeft, ChevronRight, FileUp, Play, RefreshCw, Square } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileUp, Play, RefreshCw, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +26,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Field, WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n/client";
+import { batchStatusLabel, formatCurrency } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 import type {
   BacktestUniverse,
@@ -45,6 +47,8 @@ type RankingSortKey =
   | "rank"
   | "symbol"
   | "total_return_pct"
+  | "buy_hold_return_pct"
+  | "alpha_return_pct"
   | "sharpe"
   | "max_drawdown_pct"
   | "win_rate_pct"
@@ -52,24 +56,6 @@ type RankingSortKey =
   | "final_equity";
 type SortDirection = "asc" | "desc";
 type RankedResult = BatchBacktestSymbolResult & { rank: number };
-
-const RANKING_SORT_LABELS: Record<RankingSortKey, string> = {
-  rank: "Rank",
-  symbol: "Symbol",
-  total_return_pct: "Return",
-  sharpe: "Sharpe",
-  max_drawdown_pct: "Max DD",
-  win_rate_pct: "Win rate",
-  num_trades: "Trades",
-  final_equity: "Final equity",
-};
-
-const usd = (n: number) =>
-  n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
 
 function paramsFor(s?: StrategyDescriptor): Record<string, number> {
   const props = (s?.param_schema?.properties as Record<string, ParamSpec>) ?? {};
@@ -90,6 +76,7 @@ export function BatchBacktest({
   strategies: StrategyDescriptor[];
   universes: BacktestUniverse[];
 }) {
+  const { locale, t } = useI18n();
   const [strategyKey, setStrategyKey] = useState(strategies[0]?.key ?? "");
   const selectedStrategy = useMemo(
     () => strategies.find((s) => s.key === strategyKey) ?? strategies[0],
@@ -109,29 +96,36 @@ export function BatchBacktest({
   const [report, setReport] = useState<BatchBacktestReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadFromUrlError = t.batchBacktest.loadFromUrlError;
+  const refreshError = t.batchBacktest.refreshError;
 
   useEffect(() => {
     const jobId = new URLSearchParams(window.location.search).get("batchJobId");
-    if (!jobId) return;
 
     let cancelled = false;
     void (async () => {
       try {
-        const next = await api.batchBacktest(jobId);
+        const next = jobId ? await api.batchBacktest(jobId) : await api.latestBatchBacktest();
+        if (!next) return;
         if (cancelled) return;
         setJob(next);
+        if (!jobId) {
+          const searchParams = new URLSearchParams(window.location.search);
+          searchParams.set("batchJobId", next.id);
+          window.history.replaceState(null, "", `${window.location.pathname}?${searchParams}`);
+        }
         if (next.status === "completed") {
-          setReport(await api.batchBacktestReport(jobId));
+          setReport(await api.batchBacktestReport(next.id));
         }
       } catch {
-        if (!cancelled) setError("Could not load batch backtest from URL.");
+        if (!cancelled) setError(loadFromUrlError);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadFromUrlError]);
 
   useEffect(() => {
     const jobId = job?.id;
@@ -154,7 +148,7 @@ export function BatchBacktest({
             setJob(next);
           }
         } catch {
-          if (!cancelled) setError("Could not refresh batch backtest status.");
+          if (!cancelled) setError(refreshError);
         }
       })();
     }, 2500);
@@ -162,7 +156,7 @@ export function BatchBacktest({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [job?.id, job?.status]);
+  }, [job?.id, job?.status, refreshError]);
 
   async function refreshJob(jobId: string) {
     try {
@@ -172,14 +166,15 @@ export function BatchBacktest({
         setReport(await api.batchBacktestReport(jobId));
       }
     } catch {
-      setError("Could not refresh batch backtest status.");
+      setError(t.batchBacktest.refreshError);
     }
   }
 
   async function start() {
     if (!strategyKey) return;
+    if (loading || isRunning(job)) return;
     if (!symbolsText.trim() && selectedUniverses.length === 0) {
-      setError("Add imported symbols or choose at least one universe.");
+      setError(t.batchBacktest.inputRequiredError);
       return;
     }
     setLoading(true);
@@ -200,7 +195,7 @@ export function BatchBacktest({
       searchParams.set("batchJobId", next.id);
       window.history.replaceState(null, "", `${window.location.pathname}?${searchParams}`);
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Could not start batch backtest.");
+      setError(exc instanceof Error ? `${t.batchBacktest.startError} ${exc.message}` : t.batchBacktest.startError);
     } finally {
       setLoading(false);
     }
@@ -212,7 +207,7 @@ export function BatchBacktest({
     try {
       setJob(await api.cancelBatchBacktest(job.id));
     } catch {
-      setError("Could not cancel batch backtest.");
+      setError(t.batchBacktest.cancelError);
     }
   }
 
@@ -222,7 +217,7 @@ export function BatchBacktest({
     try {
       setReport(await api.batchBacktestReport(job.id));
     } catch {
-      setError("Could not load batch report.");
+      setError(t.batchBacktest.loadReportError);
     }
   }
 
@@ -242,15 +237,16 @@ export function BatchBacktest({
   const progress = job?.total_symbols
     ? Math.round((job.completed_symbols / job.total_symbols) * 100)
     : 0;
+  const batchRunning = isRunning(job);
 
   return (
     <WorkbenchPanel
-      title="Batch backtests"
-      description="Run one strategy across an imported list or full market universes."
+      title={t.batchBacktest.title}
+      description={t.batchBacktest.description}
       actions={
         job ? (
           <Badge variant={job.status === "completed" ? "default" : "secondary"}>
-            {job.status}
+            {batchStatusLabel(job.status, locale)}
           </Badge>
         ) : null
       }
@@ -259,7 +255,7 @@ export function BatchBacktest({
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(20rem,0.65fr)]">
           <div className="flex flex-col gap-4 rounded-lg border bg-muted/15 p-3 md:p-4">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="Strategy">
+              <Field label={t.batchBacktest.strategy}>
                 <select
                   value={strategyKey}
                   onChange={(e) => {
@@ -276,18 +272,18 @@ export function BatchBacktest({
                   ))}
                 </select>
               </Field>
-              <Field label="Timeframe">
+              <Field label={t.batchBacktest.timeframe}>
                 <select
                   value={timeframe}
                   onChange={(e) => setTimeframe(e.target.value)}
                   className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
                 >
-                  <option value="1Day">Daily</option>
-                  <option value="1Hour">Hourly</option>
-                  <option value="1Min">1 minute</option>
+                  <option value="1Day">{t.batchBacktest.daily}</option>
+                  <option value="1Hour">{t.batchBacktest.hourly}</option>
+                  <option value="1Min">{t.batchBacktest.minute}</option>
                 </select>
               </Field>
-              <Field label="Lookback days">
+              <Field label={t.batchBacktest.lookbackDays}>
                 <input
                   type="number"
                   min={5}
@@ -297,7 +293,7 @@ export function BatchBacktest({
                   className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
                 />
               </Field>
-              <Field label="Initial capital">
+              <Field label={t.batchBacktest.initialCapital}>
                 <input
                   type="number"
                   min={1}
@@ -327,7 +323,7 @@ export function BatchBacktest({
 
             <div className="flex flex-col gap-2">
               <span className="text-xs font-semibold text-muted-foreground">
-                Universes
+                {t.batchBacktest.universes}
               </span>
               <div className="grid gap-2 sm:grid-cols-3">
                 {universes.map((universe) => (
@@ -356,17 +352,17 @@ export function BatchBacktest({
                 ))}
                 {universes.length === 0 && (
                   <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                    No universes available from the API.
+                    {t.batchBacktest.noUniverses}
                   </p>
                 )}
               </div>
             </div>
 
-            <Field label="Imported symbols">
+            <Field label={t.batchBacktest.importedSymbols}>
               <textarea
                 value={symbolsText}
                 onChange={(e) => setSymbolsText(e.target.value)}
-                placeholder="AAPL, MSFT, NVDA or one symbol per line"
+                placeholder={t.batchBacktest.importedSymbolsPlaceholder}
                 className="min-h-32 w-full resize-y rounded-lg border bg-background px-3 py-2 text-sm uppercase"
               />
             </Field>
@@ -381,7 +377,7 @@ export function BatchBacktest({
                 />
                 <span className="inline-flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border bg-background px-2.5 text-sm font-medium hover:bg-muted sm:w-auto">
                   <FileUp data-icon="inline-start" />
-                  Import file
+                  {t.batchBacktest.importFile}
                 </span>
               </label>
               {fileName && (
@@ -390,9 +386,17 @@ export function BatchBacktest({
                 </span>
               )}
               <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row">
-                <Button onClick={start} disabled={loading || !strategyKey} className="w-full sm:w-auto">
+                <Button
+                  onClick={start}
+                  disabled={loading || batchRunning || !strategyKey}
+                  className="w-full sm:w-auto"
+                >
                   <Play data-icon="inline-start" />
-                  {loading ? "Starting..." : "Start batch"}
+                  {loading
+                    ? t.common.starting
+                    : batchRunning
+                      ? t.batchBacktest.batchRunning
+                      : t.batchBacktest.startBatch}
                 </Button>
                 {job && (
                   <Button
@@ -401,13 +405,13 @@ export function BatchBacktest({
                     className="w-full sm:w-auto"
                   >
                     <RefreshCw data-icon="inline-start" />
-                    Refresh
+                    {t.batchBacktest.refresh}
                   </Button>
                 )}
                 {isRunning(job) && (
                   <Button variant="destructive" onClick={cancel} className="w-full sm:w-auto">
                     <Square data-icon="inline-start" />
-                    Cancel
+                    {t.batchBacktest.cancel}
                   </Button>
                 )}
               </div>
@@ -419,9 +423,9 @@ export function BatchBacktest({
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold">Progress</h3>
+                <h3 className="text-sm font-semibold">{t.batchBacktest.progressTitle}</h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {job ? job.id : "No batch job running"}
+                  {job ? job.id : t.batchBacktest.noBatchRunning}
                 </p>
               </div>
               {job?.current_symbol && (
@@ -437,17 +441,17 @@ export function BatchBacktest({
             </div>
 
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <Metric label="Progress" value={`${progress}%`} />
-              <Metric label="Total" value={String(job?.total_symbols ?? 0)} />
-              <Metric label="Completed" value={String(job?.completed_symbols ?? 0)} />
-              <Metric label="Succeeded" value={String(job?.succeeded_symbols ?? 0)} />
-              <Metric label="Failed" value={String(job?.failed_symbols ?? 0)} />
-              <Metric label="Status" value={job?.status ?? "idle"} />
+              <Metric label={t.batchBacktest.progress} value={`${progress}%`} />
+              <Metric label={t.common.total} value={String(job?.total_symbols ?? 0)} />
+              <Metric label={t.batchBacktest.completed} value={String(job?.completed_symbols ?? 0)} />
+              <Metric label={t.batchBacktest.succeeded} value={String(job?.succeeded_symbols ?? 0)} />
+              <Metric label={t.batchBacktest.failed} value={String(job?.failed_symbols ?? 0)} />
+              <Metric label={t.batchBacktest.status} value={batchStatusLabel(job?.status, locale)} />
             </dl>
 
             {job?.status === "completed" && !report && (
               <Button className="mt-4 w-full" onClick={loadReport}>
-                Load report
+                {t.batchBacktest.loadReport}
               </Button>
             )}
             {job?.error && (
@@ -462,6 +466,9 @@ export function BatchBacktest({
 }
 
 function BatchReport({ report }: { report: BatchBacktestReport }) {
+  const { locale, t } = useI18n();
+  const usd = (n: number) =>
+    formatCurrency(n, locale, { maximumFractionDigits: 0 });
   const completed = report.results.filter((r) => r.status === "completed");
   const failed = report.results.filter((r) => r.status === "failed");
   const sorted = [...completed].sort(
@@ -479,35 +486,35 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
       <div className="rounded-lg border bg-muted/20 p-4 md:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold">Batch report</h3>
+            <h3 className="text-base font-semibold">{t.batchBacktest.reportTitle}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
               {report.job.strategy_key} · {report.job.timeframe} ·{" "}
               {report.job.lookback_days} days · {usd(report.job.initial_capital)}
             </p>
           </div>
           <Badge variant={report.job.status === "completed" ? "default" : "secondary"}>
-            {report.job.status}
+            {batchStatusLabel(report.job.status, locale)}
           </Badge>
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricBox
-            label="Coverage"
+            label={t.batchBacktest.coverage}
             value={`${completed.length}/${report.job.total_symbols}`}
-            detail={`${failed.length} failed`}
+            detail={`${failed.length} ${t.batchBacktest.failed}`}
           />
           <MetricBox
-            label="Average return"
+            label={t.batchBacktest.averageReturn}
             value={pct(report.summary.average_return_pct)}
             tone={toneFor(report.summary.average_return_pct)}
           />
           <MetricBox
-            label="Median return"
+            label={t.batchBacktest.medianReturn}
             value={pct(report.summary.median_return_pct)}
             tone={toneFor(report.summary.median_return_pct)}
           />
           <MetricBox
-            label="Average max DD"
+            label={t.batchBacktest.averageMaxDd}
             value={pct(report.summary.average_max_drawdown_pct)}
             tone="negative"
           />
@@ -515,27 +522,27 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3">
-        <SymbolCard label="Best performer" result={best} tone="positive" />
-        <SymbolCard label="Median result" result={medianResult} tone="neutral" />
-        <SymbolCard label="Weakest performer" result={worst} tone="negative" />
+        <SymbolCard label={t.batchBacktest.bestPerformer} result={best} tone="positive" />
+        <SymbolCard label={t.batchBacktest.medianResult} result={medianResult} tone="neutral" />
+        <SymbolCard label={t.batchBacktest.weakestPerformer} result={worst} tone="negative" />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricBox label="Average Sharpe" value={num(report.summary.average_sharpe)} />
-        <MetricBox label="Total trades" value={String(report.summary.total_trades ?? 0)} />
+        <MetricBox label={t.batchBacktest.averageSharpe} value={num(report.summary.average_sharpe)} />
+        <MetricBox label={t.batchBacktest.totalTrades} value={String(report.summary.total_trades ?? 0)} />
         <MetricBox
-          label="Successful symbols"
+          label={t.batchBacktest.successfulSymbols}
           value={String(report.summary.succeeded_symbols ?? completed.length)}
         />
-        <MetricBox label="Failures" value={String(report.summary.failed_symbols ?? 0)} />
+        <MetricBox label={t.batchBacktest.failures} value={String(report.summary.failed_symbols ?? 0)} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 md:p-4">
           <div>
-            <h4 className="text-sm font-semibold">Representative equity curves</h4>
+            <h4 className="text-sm font-semibold">{t.batchBacktest.representativeCurves}</h4>
             <p className="mt-1 text-xs text-muted-foreground">
-              Best, median, and weakest successful symbols.
+              {t.batchBacktest.representativeCurvesDescription}
             </p>
           </div>
           <div className="h-64 min-w-0 sm:h-72">
@@ -551,12 +558,20 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
                   />
                   <YAxis
                     domain={["auto", "auto"]}
-                    tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={(v: number) =>
+                      formatCurrency(v, locale, {
+                        notation: "compact",
+                        maximumFractionDigits: 0,
+                      })
+                    }
                     width={48}
                     fontSize={12}
                   />
                   <Tooltip
-                    formatter={(value) => [usd(Number(value ?? 0)), "Equity"]}
+                    formatter={(value) => [
+                      usd(Number(value ?? 0)),
+                      t.batchBacktest.equity,
+                    ]}
                     labelFormatter={(label) => String(label).slice(0, 10)}
                   />
                   {symbols.map((symbol, i) => (
@@ -575,16 +590,16 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyPanel text="No successful equity curves to chart." />
+              <EmptyPanel text={t.batchBacktest.noCurves} />
             )}
           </div>
         </div>
 
         <div className="flex min-w-0 flex-col gap-3 rounded-lg border p-3 md:p-4">
           <div>
-            <h4 className="text-sm font-semibold">Return distribution</h4>
+            <h4 className="text-sm font-semibold">{t.batchBacktest.returnDistribution}</h4>
             <p className="mt-1 text-xs text-muted-foreground">
-              Count of successful symbols by return bucket.
+              {t.batchBacktest.returnDistributionDescription}
             </p>
           </div>
           <div className="h-64 min-w-0 sm:h-72">
@@ -595,11 +610,11 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
                   <XAxis dataKey="range" fontSize={11} minTickGap={16} />
                   <YAxis allowDecimals={false} fontSize={12} width={36} />
                   <Tooltip />
-                  <Bar dataKey="count" name="Symbols" fill="var(--color-primary)" radius={4} />
+                  <Bar dataKey="count" name={t.batchBacktest.symbols} fill="var(--color-primary)" radius={4} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyPanel text="No return distribution available." />
+              <EmptyPanel text={t.batchBacktest.noDistribution} />
             )}
           </div>
         </div>
@@ -609,7 +624,7 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
 
       {failed.length > 0 && (
         <div className="flex flex-col gap-3">
-          <h4 className="text-sm font-semibold">Failures</h4>
+          <h4 className="text-sm font-semibold">{t.batchBacktest.failures}</h4>
           <div className="flex flex-col gap-2 md:hidden">
             {failed.slice(0, 25).map((row) => (
               <div key={row.symbol} className="rounded-lg border p-3">
@@ -622,8 +637,8 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Error</TableHead>
+                  <TableHead>{t.batchBacktest.symbol}</TableHead>
+                  <TableHead>{t.batchBacktest.error}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -645,6 +660,21 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
 }
 
 function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
+  const { locale, t } = useI18n();
+  const usd = (n: number) =>
+    formatCurrency(n, locale, { maximumFractionDigits: 0 });
+  const rankingSortLabels: Record<RankingSortKey, string> = {
+    rank: t.batchBacktest.rank,
+    symbol: t.batchBacktest.symbol,
+    total_return_pct: t.batchBacktest.return,
+    buy_hold_return_pct: t.batchBacktest.buyHold,
+    alpha_return_pct: t.batchBacktest.alpha,
+    sharpe: t.batchBacktest.sharpe,
+    max_drawdown_pct: t.batchBacktest.maxDd,
+    win_rate_pct: t.batchBacktest.winRate,
+    num_trades: t.batchBacktest.trades,
+    final_equity: t.batchBacktest.finalEquity,
+  };
   const [sort, setSort] = useState<{
     key: RankingSortKey;
     direction: SortDirection;
@@ -686,13 +716,13 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h4 className="text-sm font-semibold">Symbol ranking</h4>
+        <h4 className="text-sm font-semibold">{t.batchBacktest.symbolRanking}</h4>
         <p className="text-xs text-muted-foreground">
-          {visibleStart}-{visibleEnd} of {sorted.length}
+          {visibleStart}-{visibleEnd} {t.common.of} {sorted.length}
         </p>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1 md:hidden">
-        {(Object.keys(RANKING_SORT_LABELS) as RankingSortKey[]).map((key) => (
+        {(Object.keys(rankingSortLabels) as RankingSortKey[]).map((key) => (
           <Button
             key={key}
             type="button"
@@ -701,7 +731,7 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
             className="shrink-0"
             onClick={() => handleSort(key)}
           >
-            {RANKING_SORT_LABELS[key]}
+            {rankingSortLabels[key]}
             {sort.key === key && (sort.direction === "asc" ? " ↑" : " ↓")}
           </Button>
         ))}
@@ -713,7 +743,7 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
               <div className="min-w-0">
                 <p className="font-mono text-sm font-semibold">{row.symbol}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  #{row.rank} by return · {row.num_trades ?? 0} trades
+                  #{row.rank} {t.batchBacktest.byReturn} · {row.num_trades ?? 0} {t.batchBacktest.trades}
                 </p>
               </div>
               <p className={cn("shrink-0 text-sm font-semibold", returnTone(row.total_return_pct))}>
@@ -721,11 +751,13 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
               </p>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-              <Metric label="Sharpe" value={num(row.sharpe)} />
-              <Metric label="Max DD" value={pct(row.max_drawdown_pct)} />
-              <Metric label="Win rate" value={pct(row.win_rate_pct)} />
+              <Metric label={t.batchBacktest.sharpe} value={num(row.sharpe)} />
+              <Metric label={t.batchBacktest.buyHold} value={pct(row.buy_hold_return_pct)} />
+              <Metric label={t.batchBacktest.alpha} value={pct(row.alpha_return_pct)} />
+              <Metric label={t.batchBacktest.maxDd} value={pct(row.max_drawdown_pct)} />
+              <Metric label={t.batchBacktest.winRate} value={pct(row.win_rate_pct)} />
               <Metric
-                label="Final equity"
+                label={t.batchBacktest.finalEquity}
                 value={row.final_equity === null ? "—" : usd(row.final_equity)}
               />
             </dl>
@@ -733,58 +765,72 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
         ))}
       </div>
       <div className="hidden overflow-x-auto rounded-lg border md:block">
-        <Table className="min-w-[48rem]">
+        <Table className="min-w-[62rem]">
           <TableHeader>
             <TableRow>
               <SortableTableHead
-                label="Rank"
+                label={t.batchBacktest.rank}
                 sortKey="rank"
                 activeSort={sort}
                 onSort={handleSort}
               />
               <SortableTableHead
-                label="Symbol"
+                label={t.batchBacktest.symbol}
                 sortKey="symbol"
                 activeSort={sort}
                 onSort={handleSort}
               />
               <SortableTableHead
-                label="Return"
+                label={t.batchBacktest.return}
                 sortKey="total_return_pct"
                 activeSort={sort}
                 onSort={handleSort}
                 align="right"
               />
               <SortableTableHead
-                label="Sharpe"
+                label={t.batchBacktest.buyHold}
+                sortKey="buy_hold_return_pct"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label={t.batchBacktest.alpha}
+                sortKey="alpha_return_pct"
+                activeSort={sort}
+                onSort={handleSort}
+                align="right"
+              />
+              <SortableTableHead
+                label={t.batchBacktest.sharpe}
                 sortKey="sharpe"
                 activeSort={sort}
                 onSort={handleSort}
                 align="right"
               />
               <SortableTableHead
-                label="Max DD"
+                label={t.batchBacktest.maxDd}
                 sortKey="max_drawdown_pct"
                 activeSort={sort}
                 onSort={handleSort}
                 align="right"
               />
               <SortableTableHead
-                label="Win rate"
+                label={t.batchBacktest.winRate}
                 sortKey="win_rate_pct"
                 activeSort={sort}
                 onSort={handleSort}
                 align="right"
               />
               <SortableTableHead
-                label="Trades"
+                label={t.batchBacktest.trades}
                 sortKey="num_trades"
                 activeSort={sort}
                 onSort={handleSort}
                 align="right"
               />
               <SortableTableHead
-                label="Final equity"
+                label={t.batchBacktest.finalEquity}
                 sortKey="final_equity"
                 activeSort={sort}
                 onSort={handleSort}
@@ -799,6 +845,12 @@ function ResultsTable({ results }: { results: BatchBacktestSymbolResult[] }) {
                 <TableCell className="font-mono text-xs">{row.symbol}</TableCell>
                 <TableCell className={cn("text-right font-medium", returnTone(row.total_return_pct))}>
                   {pct(row.total_return_pct)}
+                </TableCell>
+                <TableCell className={cn("text-right", returnTone(row.buy_hold_return_pct))}>
+                  {pct(row.buy_hold_return_pct)}
+                </TableCell>
+                <TableCell className={cn("text-right font-medium", returnTone(row.alpha_return_pct))}>
+                  {pct(row.alpha_return_pct)}
                 </TableCell>
                 <TableCell className="text-right">{num(row.sharpe)}</TableCell>
                 <TableCell className="text-right text-red-600">
@@ -848,9 +900,6 @@ function SortableTableHead({
         onClick={() => onSort(sortKey)}
       >
         {label}
-        <ArrowUpDown
-          className={cn("size-3", active ? "text-foreground" : "text-muted-foreground/60")}
-        />
         {active && (
           <span className="text-[0.65rem] text-foreground">
             {activeSort.direction === "asc" ? "↑" : "↓"}
@@ -870,10 +919,12 @@ function RankingPagination({
   pageCount: number;
   onPageChange: (page: number) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="flex items-center justify-between gap-3">
       <p className="text-xs text-muted-foreground">
-        Page {page} of {pageCount}
+        {t.common.page} {page} {t.common.of} {pageCount}
       </p>
       <div className="flex items-center gap-2">
         <Button
@@ -882,7 +933,7 @@ function RankingPagination({
           size="icon-sm"
           disabled={page <= 1}
           onClick={() => onPageChange(Math.max(1, page - 1))}
-          aria-label="Previous page"
+          aria-label={t.common.previousPage}
         >
           <ChevronLeft />
         </Button>
@@ -892,7 +943,7 @@ function RankingPagination({
           size="icon-sm"
           disabled={page >= pageCount}
           onClick={() => onPageChange(Math.min(pageCount, page + 1))}
-          aria-label="Next page"
+          aria-label={t.common.nextPage}
         >
           <ChevronRight />
         </Button>
@@ -1025,11 +1076,13 @@ function SymbolCard({
   result?: BatchBacktestSymbolResult;
   tone: "positive" | "negative" | "neutral";
 }) {
+  const { t } = useI18n();
+
   if (!result) {
     return (
       <div className="rounded-lg border border-dashed p-4">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className="mt-2 text-sm font-medium">No successful result</p>
+        <p className="mt-2 text-sm font-medium">{t.batchBacktest.noSuccessfulResult}</p>
       </div>
     );
   }
@@ -1042,14 +1095,20 @@ function SymbolCard({
           <p className="mt-2 font-mono text-lg font-semibold">{result.symbol}</p>
         </div>
         <Badge variant="secondary">
-          {tone === "positive" ? "leader" : tone === "negative" ? "risk" : "median"}
+          {tone === "positive"
+            ? t.enums.symbolRankBadge.leader
+            : tone === "negative"
+              ? t.enums.symbolRankBadge.risk
+              : t.enums.symbolRankBadge.median}
         </Badge>
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-        <Metric label="Return" value={pct(result.total_return_pct)} />
-        <Metric label="Sharpe" value={num(result.sharpe)} />
-        <Metric label="Max DD" value={pct(result.max_drawdown_pct)} />
-        <Metric label="Win rate" value={pct(result.win_rate_pct)} />
+        <Metric label={t.batchBacktest.return} value={pct(result.total_return_pct)} />
+        <Metric label={t.batchBacktest.buyHold} value={pct(result.buy_hold_return_pct)} />
+        <Metric label={t.batchBacktest.alpha} value={pct(result.alpha_return_pct)} />
+        <Metric label={t.batchBacktest.sharpe} value={num(result.sharpe)} />
+        <Metric label={t.batchBacktest.maxDd} value={pct(result.max_drawdown_pct)} />
+        <Metric label={t.batchBacktest.winRate} value={pct(result.win_rate_pct)} />
       </dl>
     </div>
   );

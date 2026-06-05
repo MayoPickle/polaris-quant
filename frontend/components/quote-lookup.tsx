@@ -6,9 +6,12 @@ import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, MetricGrid, MetricTile, WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n/client";
+import { formatCurrency } from "@/lib/i18n/format";
 import type { Quote } from "@/types";
 
 export function QuoteLookup() {
+  const { locale, t } = useI18n();
   const [symbol, setSymbol] = useState("AAPL");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +26,7 @@ export function QuoteLookup() {
     try {
       setQuote(await api.quote(s));
     } catch {
-      setError(`Could not fetch a quote for ${s}.`);
+      setError(`${t.quoteLookup.errorPrefix}${s}.`);
     } finally {
       setLoading(false);
     }
@@ -31,31 +34,31 @@ export function QuoteLookup() {
 
   const fields = quote
     ? [
-        { label: "Bid", value: quote.bid_price },
-        { label: "Ask", value: quote.ask_price },
-        { label: "Last", value: quote.last_price },
+        { label: t.quoteLookup.bid, value: quote.bid_price },
+        { label: t.quoteLookup.ask, value: quote.ask_price },
+        { label: t.quoteLookup.last, value: quote.last_price },
       ]
     : [];
 
   return (
     <WorkbenchPanel
-      title="Quote lookup"
-      description="Fetch the latest bid, ask, and last price for a symbol."
+      title={t.quoteLookup.title}
+      description={t.quoteLookup.description}
     >
       <div className="flex flex-col gap-4">
         <div className="grid gap-2 sm:flex sm:items-end">
-          <Field label="Symbol" className="sm:w-40">
+          <Field label={t.quoteLookup.symbol} className="sm:w-40">
           <input
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && lookup()}
-            placeholder="e.g. AAPL"
+            placeholder={t.quoteLookup.placeholder}
             className="h-10 w-full rounded-lg border bg-background px-3 text-sm font-medium uppercase"
           />
           </Field>
           <Button onClick={lookup} disabled={loading} className="w-full sm:w-auto">
             <Search data-icon="inline-start" />
-            {loading ? "Loading…" : "Get quote"}
+            {loading ? t.common.loading : t.quoteLookup.getQuote}
           </Button>
         </div>
 
@@ -67,7 +70,7 @@ export function QuoteLookup() {
               <MetricTile
                 key={f.label}
                 label={f.label}
-                value={`$${f.value.toFixed(2)}`}
+                value={formatCurrency(f.value, locale)}
                 tone="info"
               />
             ))}

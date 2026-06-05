@@ -135,6 +135,8 @@ export interface BacktestResult {
   initial_capital: number;
   final_equity: number;
   total_return_pct: number;
+  buy_hold_return_pct: number;
+  alpha_return_pct: number;
   num_trades: number;
   win_rate_pct: number;
   max_drawdown_pct: number;
@@ -214,6 +216,8 @@ export interface BatchBacktestSymbolResult {
   error: string | null;
   final_equity: number | null;
   total_return_pct: number | null;
+  buy_hold_return_pct: number | null;
+  alpha_return_pct: number | null;
   num_trades: number | null;
   win_rate_pct: number | null;
   max_drawdown_pct: number | null;

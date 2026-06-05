@@ -15,12 +15,11 @@ import { Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, MetricGrid, MetricTile } from "@/components/workbench";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n/client";
+import { formatCurrency } from "@/lib/i18n/format";
 import type { BacktestResult, StrategyDescriptor } from "@/types";
 
 type ParamSpec = { type?: string; default?: number; title?: string };
-
-const usd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 function initialParams(s: StrategyDescriptor): Record<string, number> {
   const props = (s.param_schema?.properties as Record<string, ParamSpec>) ?? {};
@@ -31,6 +30,9 @@ function initialParams(s: StrategyDescriptor): Record<string, number> {
 }
 
 export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor }) {
+  const { locale, t } = useI18n();
+  const usd = (n: number) =>
+    formatCurrency(n, locale, { maximumFractionDigits: 0 });
   const props = (strategy.param_schema?.properties as Record<string, ParamSpec>) ?? {};
   const [symbol, setSymbol] = useState("AAPL");
   const [lookback, setLookback] = useState(365);
@@ -54,7 +56,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
         })
       );
     } catch {
-      setError("Backtest failed — check the symbol and that market data is available.");
+      setError(t.strategyBacktest.error);
     } finally {
       setLoading(false);
     }
@@ -62,26 +64,36 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
 
   const metrics = result
     ? [
-        { label: "Total return", value: `${result.total_return_pct.toFixed(2)}%`, pos: result.total_return_pct >= 0 },
-        { label: "Final equity", value: usd(result.final_equity) },
-        { label: "Trades", value: String(result.num_trades) },
-        { label: "Win rate", value: `${result.win_rate_pct.toFixed(0)}%` },
-        { label: "Max drawdown", value: `${result.max_drawdown_pct.toFixed(2)}%`, neg: true },
-        { label: "Sharpe", value: result.sharpe.toFixed(2) },
+        { label: t.strategyBacktest.totalReturn, value: `${result.total_return_pct.toFixed(2)}%`, pos: result.total_return_pct >= 0 },
+        {
+          label: t.strategyBacktest.buyHold,
+          value: `${result.buy_hold_return_pct.toFixed(2)}%`,
+          pos: result.buy_hold_return_pct >= 0,
+        },
+        {
+          label: t.strategyBacktest.alpha,
+          value: `${result.alpha_return_pct.toFixed(2)}%`,
+          pos: result.alpha_return_pct >= 0,
+        },
+        { label: t.strategyBacktest.finalEquity, value: usd(result.final_equity) },
+        { label: t.strategyBacktest.trades, value: String(result.num_trades) },
+        { label: t.strategyBacktest.winRate, value: `${result.win_rate_pct.toFixed(0)}%` },
+        { label: t.strategyBacktest.maxDrawdown, value: `${result.max_drawdown_pct.toFixed(2)}%`, neg: true },
+        { label: t.strategyBacktest.sharpe, value: result.sharpe.toFixed(2) },
       ]
     : [];
 
   return (
     <section className="flex flex-col gap-4">
       <div>
-        <h3 className="text-sm font-semibold">Backtest</h3>
+        <h3 className="text-sm font-semibold">{t.strategyBacktest.title}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Historical daily bars
+          {t.strategyBacktest.description}
         </p>
       </div>
 
       <div className="grid grid-cols-2 items-end gap-3 rounded-lg border bg-muted/20 p-3 sm:flex sm:flex-wrap">
-        <Field label="Symbol">
+        <Field label={t.strategyBacktest.symbol}>
           <input
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
@@ -89,7 +101,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
             className="h-9 w-full rounded-md border bg-background px-3 text-sm font-medium uppercase sm:w-28"
           />
         </Field>
-        <Field label="Lookback">
+        <Field label={t.strategyBacktest.lookback}>
           <input
             type="number"
             value={lookback}
@@ -109,7 +121,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
         ))}
         <Button onClick={run} disabled={loading} className="col-span-2 w-full sm:w-auto">
           <Play data-icon="inline-start" />
-          {loading ? "Running…" : "Run backtest"}
+          {loading ? t.common.running : t.strategyBacktest.run}
         </Button>
       </div>
 
@@ -117,7 +129,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
 
       {result && (
         <>
-          <MetricGrid className="sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-6">
+          <MetricGrid className="sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
             {metrics.map((m) => (
               <MetricTile
                 key={m.label}
@@ -146,12 +158,20 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
                 />
                 <YAxis
                   domain={["auto", "auto"]}
-                  tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                  tickFormatter={(v: number) =>
+                    formatCurrency(v, locale, {
+                      notation: "compact",
+                      maximumFractionDigits: 0,
+                    })
+                  }
                   width={56}
                   fontSize={12}
                 />
                 <Tooltip
-                  formatter={(value) => [usd(Number(value ?? 0)), "Equity"]}
+                  formatter={(value) => [
+                    usd(Number(value ?? 0)),
+                    t.strategyBacktest.equity,
+                  ]}
                   labelFormatter={(label) => String(label).slice(0, 10)}
                 />
                 <Line

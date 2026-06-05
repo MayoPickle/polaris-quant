@@ -17,13 +17,20 @@ import {
   WorkbenchPanel,
 } from "@/components/workbench";
 import { api } from "@/lib/api";
+import {
+  brokerEnvLabel,
+  formatCurrency,
+  formatDateTime,
+  formatPercent,
+  marketSessionLabel,
+  orderSideLabel,
+  orderStatusLabel,
+  orderTypeLabel,
+} from "@/lib/i18n/format";
+import { getDictionary } from "@/lib/i18n/dictionaries";
+import { getServerLocale } from "@/lib/i18n/server";
 import { safe } from "@/lib/safe";
 import type { Order, Position, StrategyInstance } from "@/types";
-
-const usd = (value: number) =>
-  value.toLocaleString("en-US", { style: "currency", currency: "USD" });
-
-const pct = (value: number) => `${value.toFixed(Math.abs(value) >= 10 ? 0 : 1)}%`;
 
 function orderStatusVariant(
   status: string
@@ -34,12 +41,11 @@ function orderStatusVariant(
   return "outline";
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "Never";
-  return new Date(value).toLocaleString();
-}
-
 export default async function OverviewPage() {
+  const locale = await getServerLocale();
+  const t = getDictionary(locale);
+  const usd = (value: number) => formatCurrency(value, locale);
+  const pct = (value: number) => formatPercent(value, locale);
   const [health, clock, account, positions, orders, strategyInstances] = await Promise.all([
     safe(api.health()),
     safe(api.marketClock()),
@@ -77,67 +83,71 @@ export default async function OverviewPage() {
 
   const accountStats = [
     {
-      label: "Equity",
+      label: t.pages.overview.equity,
       value: account ? usd(account.equity) : "—",
       tone: "neutral",
-      detail: account ? `${usd(account.cash)} cash` : "Account unavailable",
+      detail: account
+        ? `${usd(account.cash)} ${t.pages.overview.equityDetail}`
+        : t.pages.overview.accountUnavailable,
     },
     {
-      label: "Buying power",
+      label: t.pages.overview.buyingPower,
       value: account ? usd(account.buying_power) : "—",
       tone: "info",
-      detail: "Available capacity",
+      detail: t.pages.overview.buyingPowerDetail,
     },
     {
-      label: "Exposure",
+      label: t.pages.overview.exposure,
       value: exposurePct == null ? "—" : pct(exposurePct),
       tone: exposurePct != null && exposurePct > 80 ? "warning" : "neutral",
-      detail: `${usd(grossExposure)} market value`,
+      detail: `${usd(grossExposure)} ${t.pages.overview.exposureDetail}`,
     },
     {
-      label: "Unrealized P/L",
+      label: t.pages.overview.unrealizedPl,
       value: positions ? usd(totalUnrealized) : "—",
       tone: totalUnrealized > 0 ? "positive" : totalUnrealized < 0 ? "negative" : "neutral",
-      detail: `${positionRows.length} open positions`,
+      detail: `${positionRows.length} ${t.common.openPositions}`,
     },
   ] as const;
 
   const operatingStatus = [
     {
-      label: "Market",
-      value: clock?.is_open ? "Open" : "Closed",
-      detail: "US equities",
+      label: t.pages.overview.market,
+      value: marketSessionLabel(clock?.is_open, locale),
+      detail: t.pages.overview.marketDetail,
       tone: clock?.is_open ? "positive" : "neutral",
     },
     {
-      label: "Trading guard",
-      value: health?.trading_enabled ? "Enabled" : "Disabled",
-      detail: "Order gate",
+      label: t.pages.overview.tradingGuard,
+      value: health?.trading_enabled ? t.common.enabled : t.common.disabled,
+      detail: t.pages.overview.tradingGuardDetail,
       tone: health?.trading_enabled ? "positive" : "warning",
     },
     {
-      label: "Broker",
-      value: health?.broker_env?.toUpperCase() ?? "—",
-      detail: health?.env ?? "API unavailable",
+      label: t.pages.overview.broker,
+      value: brokerEnvLabel(health?.broker_env, locale),
+      detail: health?.env ?? t.common.apiOffline,
       tone: "neutral",
     },
     {
-      label: "Sizing",
+      label: t.pages.overview.sizing,
       value: health?.openai_sizing_enabled
         ? health.position_model
-        : `${health?.default_position_allocation_pct ?? 1}% preset`,
-      detail: health?.openai_sizing_enabled ? "OpenAI allocator" : "Fallback allocation",
+        : `${health?.default_position_allocation_pct ?? 1}% ${t.pages.overview.preset}`,
+      detail: health?.openai_sizing_enabled
+        ? t.pages.overview.sizingOpenAi
+        : t.pages.overview.sizingFallback,
       tone: health?.openai_sizing_enabled ? "info" : "neutral",
     },
   ] as const;
 
   return (
     <AppShell
-      title="Overview"
-      subtitle={health ? "Account, automation, and order flow" : "Backend unreachable"}
+      title={t.pages.overview.title}
+      subtitle={health ? t.pages.overview.subtitle : t.common.backendUnreachable}
       actions={
         <Badge variant={health ? "default" : "destructive"}>
-          {health ? "API online" : "API offline"}
+          {health ? t.common.apiOnline : t.common.apiOffline}
         </Badge>
       }
     >
@@ -155,9 +165,9 @@ export default async function OverviewPage() {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_23rem]">
         <WorkbenchPanel
-          title="Operating status"
-          description="Current broker and automation readiness."
-          actions={<Badge variant={pendingOrders > 0 ? "secondary" : "outline"}>{pendingOrders} pending</Badge>}
+          title={t.pages.overview.operatingTitle}
+          description={t.pages.overview.operatingDescription}
+          actions={<Badge variant={pendingOrders > 0 ? "secondary" : "outline"}>{pendingOrders} {t.common.pending}</Badge>}
         >
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {operatingStatus.map((item) => (
@@ -174,11 +184,15 @@ export default async function OverviewPage() {
         </WorkbenchPanel>
 
         <WorkbenchPanel
-          title="Automation"
-          description={`${activeStrategies.length} active · ${strategyRows.length} configured`}
+          title={t.pages.overview.automationTitle}
+          description={`${activeStrategies.length} ${t.common.active} · ${strategyRows.length} ${t.common.configured}`}
           actions={
             <Badge variant={erroredStrategies.length > 0 ? "destructive" : activeStrategies.length > 0 ? "default" : "outline"}>
-              {erroredStrategies.length > 0 ? "Errors" : activeStrategies.length > 0 ? "Running" : "Idle"}
+              {erroredStrategies.length > 0
+                ? t.enums.automationState.errors
+                : activeStrategies.length > 0
+                  ? t.enums.automationState.active
+                  : t.enums.automationState.idle}
             </Badge>
           }
           className="self-start"
@@ -193,12 +207,12 @@ export default async function OverviewPage() {
                     {strategy.strategy_key}
                   </p>
                 </div>
-                <Badge variant="default">On</Badge>
+                <Badge variant="default">{t.common.on}</Badge>
               </div>
               <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                <p className="truncate">{strategy.symbols.join(", ") || "No symbols"}</p>
-                <p className="truncate font-mono">{strategy.schedule || "No schedule"}</p>
-                <p>Last run: {formatDate(strategy.last_run_at)}</p>
+                <p className="truncate">{strategy.symbols.join(", ") || t.common.noSymbols}</p>
+                <p className="truncate font-mono">{strategy.schedule || t.common.noSchedule}</p>
+                <p>{t.pages.overview.lastRun}: {formatDateTime(strategy.last_run_at, locale)}</p>
               </div>
               {strategy.last_error && (
                 <p className="mt-2 line-clamp-2 text-xs text-red-600">{strategy.last_error}</p>
@@ -207,19 +221,19 @@ export default async function OverviewPage() {
           ))}
           {activeStrategies.length > 4 && (
             <p className="px-1 text-xs text-muted-foreground">
-              +{activeStrategies.length - 4} more active strategies
+              +{activeStrategies.length - 4}{t.common.moreActiveStrategies}
             </p>
           )}
-          {strategyInstances === null && <EmptyState className="py-5">Could not load automation.</EmptyState>}
+          {strategyInstances === null && <EmptyState className="py-5">{t.pages.overview.automationLoadError}</EmptyState>}
           {strategyInstances !== null && activeStrategies.length === 0 && (
-            <EmptyState className="py-5">No active automated strategies.</EmptyState>
+            <EmptyState className="py-5">{t.pages.overview.noActiveStrategies}</EmptyState>
           )}
         </WorkbenchPanel>
       </div>
 
       <WorkbenchPanel
-        title="Position price history"
-        description="Daily close for the five largest open positions over the last 90 days."
+        title={t.pages.overview.priceHistoryTitle}
+        description={t.pages.overview.priceHistoryDescription}
         actions={
           <Badge
             variant={
@@ -229,10 +243,10 @@ export default async function OverviewPage() {
             }
           >
             {priceHistory
-              ? `${priceHistory.series.length} symbols`
+              ? `${priceHistory.series.length} ${t.common.symbols}`
               : priceHistorySymbols.length > 0
-                ? "Unavailable"
-                : "No positions"}
+                ? t.common.unavailable
+                : t.common.noPositions}
           </Badge>
         }
       >
@@ -241,19 +255,19 @@ export default async function OverviewPage() {
         ) : (
           <EmptyState>
             {priceHistorySymbols.length > 0
-              ? "Could not load price history."
+              ? t.pages.overview.couldNotLoadPriceHistory
               : positions === null
-                ? "Could not load positions."
-                : "No open positions to chart."}
+                ? t.pages.overview.couldNotLoadPositions
+                : t.pages.overview.noOpenPositionsToChart}
           </EmptyState>
         )}
       </WorkbenchPanel>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <WorkbenchPanel
-          title="Open positions"
-          description="Current exposure and unrealized performance."
-          actions={<Badge variant="outline">{positionRows.length} symbols</Badge>}
+          title={t.pages.overview.openPositionsTitle}
+          description={t.pages.overview.openPositionsDescription}
+          actions={<Badge variant="outline">{positionRows.length} {t.common.symbols}</Badge>}
           contentClassName="p-0"
         >
           <div className="md:hidden">
@@ -263,7 +277,7 @@ export default async function OverviewPage() {
                   <div>
                     <p className="font-semibold">{p.symbol}</p>
                     <p className="text-xs text-muted-foreground">
-                      Qty {p.qty} · Avg {usd(p.avg_entry_price)}
+                      {t.common.qty} {p.qty} · {t.common.avg} {usd(p.avg_entry_price)}
                     </p>
                   </div>
                   <p
@@ -275,7 +289,7 @@ export default async function OverviewPage() {
                   </p>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Market value</span>
+                  <span className="text-muted-foreground">{t.common.marketValue}</span>
                   <span className="font-medium">{usd(p.market_value)}</span>
                 </div>
               </div>
@@ -284,8 +298,8 @@ export default async function OverviewPage() {
               <div className="p-4">
                 <EmptyState>
                   {positions === null
-                    ? "Could not load positions."
-                    : "No open positions."}
+                    ? t.pages.overview.couldNotLoadPositions
+                    : t.common.noPositions}
                 </EmptyState>
               </div>
             )}
@@ -294,11 +308,11 @@ export default async function OverviewPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Avg entry</TableHead>
-                  <TableHead className="text-right">Market value</TableHead>
-                  <TableHead className="text-right">Unrealized P/L</TableHead>
+                  <TableHead>{t.batchBacktest.symbol}</TableHead>
+                  <TableHead className="text-right">{t.common.qty}</TableHead>
+                  <TableHead className="text-right">{t.common.avgPrice}</TableHead>
+                  <TableHead className="text-right">{t.common.marketValue}</TableHead>
+                  <TableHead className="text-right">{t.pages.overview.unrealizedPl}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -328,8 +342,8 @@ export default async function OverviewPage() {
                       className="py-8 text-center text-muted-foreground"
                     >
                       {positions === null
-                        ? "Could not load positions."
-                        : "No open positions."}
+                        ? t.pages.overview.couldNotLoadPositions
+                        : t.common.noPositions}
                     </TableCell>
                   </TableRow>
                 )}
@@ -339,9 +353,9 @@ export default async function OverviewPage() {
         </WorkbenchPanel>
 
         <WorkbenchPanel
-          title="Recent orders"
-          description="Latest manual and automated orders."
-          actions={<Badge variant="outline">{orderRows.length} orders</Badge>}
+          title={t.pages.overview.recentOrdersTitle}
+          description={t.pages.overview.recentOrdersDescription}
+          actions={<Badge variant="outline">{orderRows.length} {t.common.orders}</Badge>}
           contentClassName="p-0"
         >
           <div className="md:hidden">
@@ -351,21 +365,21 @@ export default async function OverviewPage() {
                   <div>
                     <p className="font-semibold">{order.symbol}</p>
                     <p className="text-xs text-muted-foreground">
-                      {order.order_type} · Qty {order.qty} · Filled {order.filled_qty}
+                      {orderTypeLabel(order.order_type, locale)} · {t.common.qty} {order.qty} · {t.common.filled} {order.filled_qty}
                     </p>
                   </div>
                   <Badge variant={orderStatusVariant(order.status)}>
-                    {order.status.replace("_", " ")}
+                    {orderStatusLabel(order.status, locale)}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className={order.side === "buy" ? "text-green-600" : "text-red-600"}>
-                    {order.side.toUpperCase()}
+                    {orderSideLabel(order.side, locale)}
                   </span>
                   <span className="font-medium">
                     {order.filled_avg_price != null
-                      ? `${usd(order.filled_avg_price)} avg`
-                      : "No fill price"}
+                      ? `${usd(order.filled_avg_price)} ${t.common.avg}`
+                      : t.common.noFillPrice}
                   </span>
                 </div>
               </div>
@@ -373,7 +387,7 @@ export default async function OverviewPage() {
             {(!orders || orders.length === 0) && (
               <div className="p-4">
                 <EmptyState>
-                  {orders === null ? "Could not load orders." : "No orders yet."}
+                  {orders === null ? t.pages.overview.couldNotLoadOrders : t.common.noOrders}
                 </EmptyState>
               </div>
             )}
@@ -382,12 +396,12 @@ export default async function OverviewPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Symbol</TableHead>
-                  <TableHead>Side</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Filled</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
+                  <TableHead>{t.batchBacktest.symbol}</TableHead>
+                  <TableHead>{t.common.side}</TableHead>
+                  <TableHead>{t.common.type}</TableHead>
+                  <TableHead className="text-right">{t.common.qty}</TableHead>
+                  <TableHead className="text-right">{t.common.filled}</TableHead>
+                  <TableHead className="text-right">{t.batchBacktest.status}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -396,15 +410,15 @@ export default async function OverviewPage() {
                     <TableCell className="font-medium">{order.symbol}</TableCell>
                     <TableCell>
                       <span className={order.side === "buy" ? "text-green-600" : "text-red-600"}>
-                        {order.side.toUpperCase()}
+                        {orderSideLabel(order.side, locale)}
                       </span>
                     </TableCell>
-                    <TableCell className="capitalize">{order.order_type}</TableCell>
+                    <TableCell>{orderTypeLabel(order.order_type, locale)}</TableCell>
                     <TableCell className="text-right">{order.qty}</TableCell>
                     <TableCell className="text-right">{order.filled_qty}</TableCell>
                     <TableCell className="text-right">
                       <Badge variant={orderStatusVariant(order.status)}>
-                        {order.status.replace("_", " ")}
+                        {orderStatusLabel(order.status, locale)}
                       </Badge>
                     </TableCell>
                   </TableRow>
@@ -415,7 +429,7 @@ export default async function OverviewPage() {
                       colSpan={6}
                       className="py-8 text-center text-muted-foreground"
                     >
-                      {orders === null ? "Could not load orders." : "No orders yet."}
+                      {orders === null ? t.pages.overview.couldNotLoadOrders : t.common.noOrders}
                     </TableCell>
                   </TableRow>
                 )}

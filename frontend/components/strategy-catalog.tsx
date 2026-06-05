@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EmptyState, WorkbenchPanel } from "@/components/workbench";
+import { useI18n } from "@/lib/i18n/client";
 import type { StrategyDescriptor } from "@/types";
 
 type ParamSpec = {
@@ -32,6 +33,7 @@ type ParamSpec = {
 };
 
 export function StrategyCatalog({ strategies }: { strategies: StrategyDescriptor[] }) {
+  const { t } = useI18n();
   const [selected, setSelected] = useState<StrategyDescriptor | null>(null);
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
@@ -47,8 +49,8 @@ export function StrategyCatalog({ strategies }: { strategies: StrategyDescriptor
   return (
     <>
       <WorkbenchPanel
-        title="Available strategies"
-        description={`${strategies.length} registered templates`}
+        title={t.strategyCatalog.title}
+        description={`${strategies.length}${t.strategyCatalog.registeredTemplates}`}
         actions={
           <label className="relative block w-full sm:w-72">
             <Search
@@ -58,7 +60,7 @@ export function StrategyCatalog({ strategies }: { strategies: StrategyDescriptor
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search strategies"
+              placeholder={t.strategyCatalog.searchPlaceholder}
               className="h-9 w-full rounded-lg border bg-background pl-9 pr-3 text-sm"
             />
           </label>
@@ -88,11 +90,11 @@ export function StrategyCatalog({ strategies }: { strategies: StrategyDescriptor
                   {s.description}
                 </span>
                 <span className="mt-2 block text-xs text-muted-foreground">
-                  {Object.keys(props).length} parameters
+                  {Object.keys(props).length} {t.strategyCatalog.parameters}
                 </span>
               </span>
               <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
-                <span className="hidden sm:inline">Backtest</span>
+                <span className="hidden sm:inline">{t.strategyCatalog.backtest}</span>
                 <ChevronRight
                   className="size-4 transition-transform group-hover:translate-x-0.5"
                   aria-hidden="true"
@@ -103,7 +105,7 @@ export function StrategyCatalog({ strategies }: { strategies: StrategyDescriptor
         })}
           {filteredStrategies.length === 0 && (
             <div className="p-4">
-              <EmptyState>No strategies found.</EmptyState>
+              <EmptyState>{t.strategyCatalog.noStrategiesFound}</EmptyState>
             </div>
           )}
         </div>
@@ -127,7 +129,7 @@ export function StrategyCatalog({ strategies }: { strategies: StrategyDescriptor
                 <StrategyBacktest strategy={selected} />
                 <details className="group border-t pt-4">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold">
-                    Parameter details
+                    {t.strategyCatalog.parameterDetails}
                     <span className="text-muted-foreground transition-transform group-open:rotate-45">
                       +
                     </span>
@@ -146,6 +148,7 @@ export function StrategyCatalog({ strategies }: { strategies: StrategyDescriptor
 }
 
 function ParametersTable({ strategy }: { strategy: StrategyDescriptor }) {
+  const { t } = useI18n();
   const props = (strategy.param_schema?.properties as Record<string, ParamSpec>) ?? {};
   const required = (strategy.param_schema?.required as string[]) ?? [];
 
@@ -174,13 +177,13 @@ function ParametersTable({ strategy }: { strategy: StrategyDescriptor }) {
               </div>
               <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <p className="text-muted-foreground">Default</p>
+                  <p className="text-muted-foreground">{t.strategyCatalog.default}</p>
                   <p className="font-mono">
                     {spec.default !== undefined ? String(spec.default) : "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Range</p>
+                  <p className="text-muted-foreground">{t.strategyCatalog.range}</p>
                   <p className="font-mono">{range}</p>
                 </div>
               </div>
@@ -192,11 +195,11 @@ function ParametersTable({ strategy }: { strategy: StrategyDescriptor }) {
         <Table className="min-w-[38rem]">
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Label</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead className="text-right">Default</TableHead>
-              <TableHead className="text-right">Range</TableHead>
+              <TableHead>{t.strategyCatalog.name}</TableHead>
+              <TableHead>{t.strategyCatalog.label}</TableHead>
+              <TableHead>{t.strategyCatalog.type}</TableHead>
+              <TableHead className="text-right">{t.strategyCatalog.default}</TableHead>
+              <TableHead className="text-right">{t.strategyCatalog.range}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

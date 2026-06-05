@@ -10,6 +10,14 @@ import {
 } from "@/components/ui/table";
 import { EmptyState, WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
+import {
+  formatCurrency,
+  orderSideLabel,
+  orderStatusLabel,
+  orderTypeLabel,
+} from "@/lib/i18n/format";
+import { getDictionary } from "@/lib/i18n/dictionaries";
+import { getServerLocale } from "@/lib/i18n/server";
 import { safe } from "@/lib/safe";
 
 function statusVariant(
@@ -22,14 +30,16 @@ function statusVariant(
 }
 
 export default async function OrdersPage() {
+  const locale = await getServerLocale();
+  const t = getDictionary(locale);
   const orders = await safe(api.listOrders());
 
   return (
-    <AppShell title="Orders" subtitle="Order history across manual and strategy trades">
+    <AppShell title={t.pages.orders.title} subtitle={t.pages.orders.subtitle}>
       <WorkbenchPanel
-        title="Order history"
-        description="Manual and strategy-generated orders in one ledger."
-        actions={<Badge variant="outline">{(orders ?? []).length} orders</Badge>}
+        title={t.pages.orders.historyTitle}
+        description={t.pages.orders.historyDescription}
+        actions={<Badge variant="outline">{(orders ?? []).length} {t.common.orders}</Badge>}
         contentClassName="p-0"
       >
       <div className="md:hidden">
@@ -39,11 +49,11 @@ export default async function OrdersPage() {
                 <div>
                   <p className="font-semibold">{o.symbol}</p>
                   <p className="text-xs text-muted-foreground">
-                    {o.order_type} · Qty {o.qty} · Filled {o.filled_qty}
+                    {orderTypeLabel(o.order_type, locale)} · {t.common.qty} {o.qty} · {t.common.filled} {o.filled_qty}
                   </p>
                 </div>
                 <Badge variant={statusVariant(o.status)}>
-                  {o.status.replace("_", " ")}
+                  {orderStatusLabel(o.status, locale)}
                 </Badge>
               </div>
               <div className="flex items-center justify-between text-sm">
@@ -52,12 +62,12 @@ export default async function OrdersPage() {
                     o.side === "buy" ? "text-green-600" : "text-red-600"
                   }
                 >
-                  {o.side.toUpperCase()}
+                  {orderSideLabel(o.side, locale)}
                 </span>
                 <span className="font-medium">
                   {o.filled_avg_price != null
-                    ? `$${o.filled_avg_price.toFixed(2)} avg`
-                  : "No fill price"}
+                    ? `${formatCurrency(o.filled_avg_price, locale)} ${t.common.avg}`
+                    : t.common.noFillPrice}
               </span>
             </div>
           </div>
@@ -65,7 +75,7 @@ export default async function OrdersPage() {
         {(!orders || orders.length === 0) && (
           <div className="p-4">
             <EmptyState>
-              {orders === null ? "Could not load orders." : "No orders yet."}
+              {orders === null ? t.pages.orders.couldNotLoadOrders : t.common.noOrders}
             </EmptyState>
           </div>
         )}
@@ -75,13 +85,13 @@ export default async function OrdersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Symbol</TableHead>
-                <TableHead>Side</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Filled</TableHead>
-                <TableHead className="text-right">Avg price</TableHead>
-                <TableHead className="text-right">Status</TableHead>
+                <TableHead>{t.batchBacktest.symbol}</TableHead>
+                <TableHead>{t.common.side}</TableHead>
+                <TableHead>{t.common.type}</TableHead>
+                <TableHead className="text-right">{t.common.qty}</TableHead>
+                <TableHead className="text-right">{t.common.filled}</TableHead>
+                <TableHead className="text-right">{t.common.avgPrice}</TableHead>
+                <TableHead className="text-right">{t.batchBacktest.status}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -94,20 +104,20 @@ export default async function OrdersPage() {
                         o.side === "buy" ? "text-green-600" : "text-red-600"
                       }
                     >
-                      {o.side.toUpperCase()}
+                      {orderSideLabel(o.side, locale)}
                     </span>
                   </TableCell>
-                  <TableCell className="capitalize">{o.order_type}</TableCell>
+                  <TableCell>{orderTypeLabel(o.order_type, locale)}</TableCell>
                   <TableCell className="text-right">{o.qty}</TableCell>
                   <TableCell className="text-right">{o.filled_qty}</TableCell>
                   <TableCell className="text-right">
                     {o.filled_avg_price != null
-                      ? `$${o.filled_avg_price.toFixed(2)}`
+                      ? formatCurrency(o.filled_avg_price, locale)
                       : "—"}
                   </TableCell>
                   <TableCell className="text-right">
                     <Badge variant={statusVariant(o.status)}>
-                      {o.status.replace("_", " ")}
+                      {orderStatusLabel(o.status, locale)}
                     </Badge>
                   </TableCell>
                 </TableRow>
@@ -119,8 +129,8 @@ export default async function OrdersPage() {
                     className="py-8 text-center text-muted-foreground"
                   >
                     {orders === null
-                      ? "Could not load orders."
-                      : "No orders yet."}
+                      ? t.pages.orders.couldNotLoadOrders
+                      : t.common.noOrders}
                   </TableCell>
                 </TableRow>
               )}

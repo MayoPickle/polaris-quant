@@ -72,6 +72,8 @@ class BacktestResultRead(BaseModel):
     initial_capital: float
     final_equity: float
     total_return_pct: float
+    buy_hold_return_pct: float
+    alpha_return_pct: float
     num_trades: int
     win_rate_pct: float
     max_drawdown_pct: float
@@ -148,6 +150,8 @@ class BatchBacktestSymbolResult(BaseModel):
     error: str | None = None
     final_equity: float | None = None
     total_return_pct: float | None = None
+    buy_hold_return_pct: float | None = None
+    alpha_return_pct: float | None = None
     num_trades: int | None = None
     win_rate_pct: float | None = None
     max_drawdown_pct: float | None = None

@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
 
+import { LanguageToggle } from "@/components/language-toggle";
 import { Logo } from "@/components/logo";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { getDictionary } from "@/lib/i18n/dictionaries";
+import { getServerLocale } from "@/lib/i18n/server";
 
-export function AppShell({
+export async function AppShell({
   title,
   subtitle,
   actions,
@@ -16,6 +19,9 @@ export function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const locale = await getServerLocale();
+  const t = getDictionary(locale);
+
   return (
     <div className="flex min-h-dvh flex-1 bg-background">
       <Sidebar />
@@ -29,11 +35,14 @@ export function AppShell({
                   Polaris Quant
                 </span>
                 <span className="block truncate text-[0.68rem] font-medium text-muted-foreground">
-                  Trading workbench
+                  {t.app.tagline}
                 </span>
               </div>
             </div>
-            <ThemeToggle />
+            <div className="flex items-center gap-2">
+              <LanguageToggle />
+              <ThemeToggle />
+            </div>
           </div>
         </header>
 
@@ -52,9 +61,6 @@ export function AppShell({
               </div>
               <div className="flex items-center gap-2 md:justify-end">
                 {actions}
-                <div className="hidden md:block">
-                  <ThemeToggle />
-                </div>
               </div>
             </div>
           </header>

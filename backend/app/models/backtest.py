@@ -72,6 +72,8 @@ class BacktestJobResult(Base, TimestampMixin):
 
     final_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    buy_hold_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    alpha_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     num_trades: Mapped[int | None] = mapped_column(Integer, nullable=True)
     win_rate_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_drawdown_pct: Mapped[float | None] = mapped_column(Float, nullable=True)

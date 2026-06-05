@@ -6,6 +6,7 @@ import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { useI18n } from "@/lib/i18n/client"
 
 type DialogContextValue = {
   open: boolean
@@ -161,6 +162,7 @@ function DialogContent({
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
 }) {
+  const { t } = useI18n()
   const { descriptionId, open, setOpen, titleId } = useDialogContext()
   const contentRef = React.useRef<HTMLDivElement>(null)
 
@@ -231,7 +233,7 @@ function DialogContent({
           >
             <XIcon
             />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{t.common.close}</span>
           </DialogClose>
         )}
       </div>

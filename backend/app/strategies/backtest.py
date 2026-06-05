@@ -40,6 +40,8 @@ class BacktestResult:
     initial_capital: float
     final_equity: float
     total_return_pct: float
+    buy_hold_return_pct: float
+    alpha_return_pct: float
     num_trades: int
     win_rate_pct: float
     max_drawdown_pct: float
@@ -74,6 +76,12 @@ def _sharpe(equity: list[float], periods_per_year: int) -> float:
     if std == 0:
         return 0.0
     return (mean / std) * math.sqrt(periods_per_year)
+
+
+def _buy_hold_return(bars: list[Bar]) -> float:
+    if len(bars) < 2 or bars[0].close <= 0:
+        return 0.0
+    return (bars[-1].close / bars[0].close - 1) * 100
 
 
 def run_backtest(
@@ -143,6 +151,8 @@ def run_backtest(
 
     equity_values = [p["equity"] for p in equity_curve] or [initial_capital]
     final_equity = equity_values[-1]
+    total_return_pct = round((final_equity / initial_capital - 1) * 100, 2)
+    buy_hold_return_pct = round(_buy_hold_return(bars), 2)
     wins = sum(1 for t in trades if t.pnl > 0)
 
     return BacktestResult(
@@ -150,7 +160,9 @@ def run_backtest(
         strategy_key=strategy.key,
         initial_capital=initial_capital,
         final_equity=round(final_equity, 2),
-        total_return_pct=round((final_equity / initial_capital - 1) * 100, 2),
+        total_return_pct=total_return_pct,
+        buy_hold_return_pct=buy_hold_return_pct,
+        alpha_return_pct=round(total_return_pct - buy_hold_return_pct, 2),
         num_trades=len(trades),
         win_rate_pct=round(wins / len(trades) * 100, 2) if trades else 0.0,
         max_drawdown_pct=round(_max_drawdown(equity_values), 2),

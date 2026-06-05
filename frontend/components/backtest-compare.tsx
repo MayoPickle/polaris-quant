@@ -23,13 +23,13 @@ import {
 } from "@/components/ui/table";
 import { WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n/client";
+import { formatCurrency } from "@/lib/i18n/format";
 import type { BacktestResult, StrategyDescriptor } from "@/types";
 
 type ParamSpec = { type?: string; default?: number; title?: string };
 
 const COLORS = ["#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed", "#0891b2"];
-const usd = (n: number) =>
-  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 let nextId = 1;
 type Row = { id: number; strategyKey: string; symbol: string; params: Record<string, number> };
@@ -57,6 +57,9 @@ function labelFor(row: Row): string {
 }
 
 export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor[] }) {
+  const { locale, t } = useI18n();
+  const usd = (n: number) =>
+    formatCurrency(n, locale, { maximumFractionDigits: 0 });
   const [rows, setRows] = useState<Row[]>(() => [
     makeRow(strategies),
     { ...makeRow(strategies), params: { ...paramsFor(strategies[0]), fast: 20, slow: 50 } },
@@ -91,7 +94,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
       });
       setResults(res.results);
     } catch {
-      setError("Comparison failed — check the symbols and parameters.");
+      setError(t.backtestCompare.error);
     } finally {
       setLoading(false);
     }
@@ -115,8 +118,8 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
 
   return (
     <WorkbenchPanel
-      title="Compare backtests"
-      description="Run several strategies or parameter sets and compare their performance."
+      title={t.backtestCompare.title}
+      description={t.backtestCompare.description}
       contentClassName="flex flex-col gap-5"
     >
         {/* Run rows */}
@@ -134,7 +137,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                   className="hidden h-3 w-3 shrink-0 rounded-full md:mb-2 md:inline-block"
                   style={{ backgroundColor: COLORS[i % COLORS.length] }}
                 />
-                <Field label="Strategy" className="md:min-w-44">
+                <Field label={t.backtestCompare.strategy} className="md:min-w-44">
                   <select
                     value={row.strategyKey}
                     onChange={(e) => changeStrategy(row.id, e.target.value)}
@@ -147,7 +150,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                     ))}
                   </select>
                 </Field>
-                <Field label="Symbol" className="md:w-24">
+                <Field label={t.backtestCompare.symbol} className="md:w-24">
                   <input
                     value={row.symbol}
                     onChange={(e) => update(row.id, { symbol: e.target.value })}
@@ -175,7 +178,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                     className="w-full text-muted-foreground md:mb-0.5 md:w-auto"
                     onClick={() => setRows((rs) => rs.filter((r) => r.id !== row.id))}
                   >
-                    Remove
+                    {t.backtestCompare.remove}
                   </Button>
                 )}
               </div>
@@ -184,7 +187,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
         </div>
 
         <div className="grid gap-3 md:flex md:flex-wrap md:items-end">
-          <Field label="Lookback (days)" className="md:w-28">
+          <Field label={t.backtestCompare.lookback} className="md:w-28">
             <input
               type="number"
               value={lookback}
@@ -198,11 +201,11 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
               className="w-full md:w-auto"
               onClick={() => setRows((rs) => [...rs, makeRow(strategies)])}
             >
-              + Add run
+              + {t.backtestCompare.addRun}
             </Button>
           )}
           <Button onClick={run} disabled={loading} className="w-full md:w-auto">
-            {loading ? "Running…" : "Run comparison"}
+            {loading ? t.common.running : t.backtestCompare.runComparison}
           </Button>
         </div>
 
@@ -225,7 +228,12 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                   />
                   <YAxis
                     domain={["auto", "auto"]}
-                    tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                    tickFormatter={(v: number) =>
+                      formatCurrency(v, locale, {
+                        notation: "compact",
+                        maximumFractionDigits: 0,
+                      })
+                    }
                     width={48}
                     fontSize={12}
                   />
@@ -241,7 +249,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                       key={i}
                       type="monotone"
                       dataKey={`r${i}`}
-                      name={res.label ?? `Run ${i + 1}`}
+                      name={res.label ?? `${t.backtestCompare.run} ${i + 1}`}
                       stroke={COLORS[i % COLORS.length]}
                       strokeWidth={2}
                       dot={false}
@@ -263,7 +271,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                         style={{ backgroundColor: COLORS[i % COLORS.length] }}
                       />
                       <span className="truncate">
-                        {res.label ?? `Run ${i + 1}`}
+                        {res.label ?? `${t.backtestCompare.run} ${i + 1}`}
                       </span>
                     </p>
                     <span
@@ -277,19 +285,29 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                     </span>
                   </div>
                   <dl className="grid grid-cols-2 gap-3 text-sm">
-                    <Metric label="Trades" value={String(res.num_trades)} />
+                    <Metric label={t.backtestCompare.trades} value={String(res.num_trades)} />
                     <Metric
-                      label="Win rate"
+                      label={t.backtestCompare.buyHold}
+                      value={`${res.buy_hold_return_pct.toFixed(2)}%`}
+                      tone={res.buy_hold_return_pct < 0 ? "neg" : undefined}
+                    />
+                    <Metric
+                      label={t.backtestCompare.alpha}
+                      value={`${res.alpha_return_pct.toFixed(2)}%`}
+                      tone={res.alpha_return_pct < 0 ? "neg" : undefined}
+                    />
+                    <Metric
+                      label={t.backtestCompare.winRate}
                       value={`${res.win_rate_pct.toFixed(0)}%`}
                     />
                     <Metric
-                      label="Max DD"
+                      label={t.backtestCompare.maxDd}
                       value={`${res.max_drawdown_pct.toFixed(2)}%`}
                       tone="neg"
                     />
-                    <Metric label="Sharpe" value={res.sharpe.toFixed(2)} />
+                    <Metric label={t.backtestCompare.sharpe} value={res.sharpe.toFixed(2)} />
                     <Metric
-                      label="Final equity"
+                      label={t.backtestCompare.finalEquity}
                       value={usd(res.final_equity)}
                       className="col-span-2"
                     />
@@ -302,13 +320,15 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Run</TableHead>
-                    <TableHead className="text-right">Return</TableHead>
-                    <TableHead className="text-right">Trades</TableHead>
-                    <TableHead className="text-right">Win rate</TableHead>
-                    <TableHead className="text-right">Max DD</TableHead>
-                    <TableHead className="text-right">Sharpe</TableHead>
-                    <TableHead className="text-right">Final equity</TableHead>
+                    <TableHead>{t.backtestCompare.run}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.return}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.buyHold}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.alpha}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.trades}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.winRate}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.maxDd}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.sharpe}</TableHead>
+                    <TableHead className="text-right">{t.backtestCompare.finalEquity}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -320,7 +340,7 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                           className="inline-block h-2.5 w-2.5 rounded-full"
                           style={{ backgroundColor: COLORS[i % COLORS.length] }}
                         />
-                        {res.label ?? `Run ${i + 1}`}
+                        {res.label ?? `${t.backtestCompare.run} ${i + 1}`}
                       </span>
                     </TableCell>
                     <TableCell
@@ -329,6 +349,20 @@ export function BacktestCompare({ strategies }: { strategies: StrategyDescriptor
                       }`}
                     >
                       {res.total_return_pct.toFixed(2)}%
+                    </TableCell>
+                    <TableCell
+                      className={`text-right ${
+                        res.buy_hold_return_pct >= 0 ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {res.buy_hold_return_pct.toFixed(2)}%
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-medium ${
+                        res.alpha_return_pct >= 0 ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {res.alpha_return_pct.toFixed(2)}%
                     </TableCell>
                     <TableCell className="text-right">{res.num_trades}</TableCell>
                     <TableCell className="text-right">{res.win_rate_pct.toFixed(0)}%</TableCell>

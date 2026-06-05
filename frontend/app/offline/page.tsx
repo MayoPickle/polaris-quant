@@ -2,26 +2,25 @@ import { WifiOff } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getDictionary } from "@/lib/i18n/dictionaries";
+import { getServerLocale } from "@/lib/i18n/server";
 
-export default function OfflinePage() {
+export default async function OfflinePage() {
+  const locale = await getServerLocale();
+  const t = getDictionary(locale);
+
   return (
-    <AppShell title="Offline" subtitle="Network access is unavailable">
+    <AppShell title={t.pages.offline.title} subtitle={t.pages.offline.subtitle}>
       <Card className="rounded-lg">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <WifiOff className="size-5" aria-hidden="true" />
-            Offline shell active
+            {t.pages.offline.shellActive}
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm text-muted-foreground">
-          <p>
-            Polaris Quant is installed and ready, but live trading data requires
-            a network connection.
-          </p>
-          <p>
-            Reconnect to load positions, orders, account balances, quotes, and
-            strategy backtests.
-          </p>
+          <p>{t.pages.offline.description}</p>
+          <p>{t.pages.offline.reconnect}</p>
         </CardContent>
       </Card>
     </AppShell>

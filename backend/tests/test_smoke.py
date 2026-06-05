@@ -83,6 +83,55 @@ def test_available_strategies_includes_sma_cross() -> None:
     assert "sma_cross" in keys
 
 
+def test_available_strategies_localizes_display_metadata() -> None:
+    zh_resp = client.get(
+        "/api/v1/strategies/available",
+        headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+    )
+    assert zh_resp.status_code == 200
+    zh_strategies = {s["key"]: s for s in zh_resp.json()}
+    assert zh_strategies["sma_cross"]["name"] == "SMA 均线交叉"
+    assert zh_strategies["sma_cross"]["description"] == "快 SMA 上穿慢 SMA 时买入；反向交叉时卖出。"
+    assert (
+        zh_strategies["sma_cross"]["param_schema"]["properties"]["fast"]["title"]
+        == "快线周期"
+    )
+
+    fallback_resp = client.get(
+        "/api/v1/strategies/available",
+        headers={"Accept-Language": "fr-FR"},
+    )
+    assert fallback_resp.status_code == 200
+    fallback_strategies = {s["key"]: s for s in fallback_resp.json()}
+    assert fallback_strategies["sma_cross"]["name"] == "SMA Crossover"
+    assert (
+        fallback_strategies["sma_cross"]["param_schema"]["properties"]["fast"]["title"]
+        == "Fast window"
+    )
+
+
+def test_backtest_universes_localize_display_metadata() -> None:
+    zh_resp = client.get(
+        "/api/v1/strategies/backtest/universes",
+        headers={"Accept-Language": "zh-CN"},
+    )
+    assert zh_resp.status_code == 200
+    zh_universes = {u["key"]: u for u in zh_resp.json()}
+    assert zh_universes["sp500"]["name"] == "S&P 500"
+    assert zh_universes["sp500"]["description"] == "来自公开 CSV 数据集的当前 S&P 500 成分股。"
+    assert zh_universes["dow30"]["description"] == "道琼斯工业平均指数成分股。"
+
+    en_resp = client.get(
+        "/api/v1/strategies/backtest/universes",
+        headers={"Accept-Language": "en-US"},
+    )
+    assert en_resp.status_code == 200
+    en_universes = {u["key"]: u for u in en_resp.json()}
+    assert en_universes["sp500"]["description"] == (
+        "Current S&P 500 constituents from a public CSV dataset."
+    )
+
+
 def test_market_bars_returns_normalized_series() -> None:
     broker = FakeMarketBroker()
     with broker_override(broker):
@@ -140,6 +189,8 @@ def test_backtest_runs_and_reports_metrics() -> None:
     assert result.symbol == "AAPL"
     assert len(result.equity_curve) == len(bars)
     assert result.num_trades >= 1
+    assert result.buy_hold_return_pct == 100.0
+    assert result.alpha_return_pct == round(result.total_return_pct - 100.0, 2)
     # Equity should never go negative in a long-only, all-cash sim.
     assert all(p["equity"] > 0 for p in result.equity_curve)
 

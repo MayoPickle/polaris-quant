@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState, Field, WorkbenchPanel } from "@/components/workbench";
 import { api } from "@/lib/api";
+import { useI18n } from "@/lib/i18n/client";
+import { brokerEnvLabel, formatDateTime } from "@/lib/i18n/format";
 import type { Health, StrategyDescriptor, StrategyInstance } from "@/types";
 
 type ParamSpec = {
@@ -38,11 +40,6 @@ function parseSymbols(value: string): string[] {
   );
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "Never";
-  return new Date(value).toLocaleString();
-}
-
 export function AutomatedTrading({
   strategies,
   instances,
@@ -52,6 +49,7 @@ export function AutomatedTrading({
   instances: StrategyInstance[];
   health: Health | null;
 }) {
+  const { locale, t } = useI18n();
   const router = useRouter();
   const [strategyKey, setStrategyKey] = useState(strategies[0]?.key ?? "");
   const selectedStrategy = useMemo(
@@ -75,11 +73,11 @@ export function AutomatedTrading({
     if (!strategyKey) return;
     const symbols = parseSymbols(symbolsText);
     if (symbols.length === 0) {
-      setError("Add at least one symbol.");
+      setError(t.automatedTrading.addSymbolError);
       return;
     }
     if (isLive && liveText !== "LIVE") {
-      setError("Type LIVE before starting a live automated strategy.");
+      setError(t.automatedTrading.liveStartError);
       return;
     }
 
@@ -87,7 +85,7 @@ export function AutomatedTrading({
     setError(null);
     try {
       await api.createStrategy({
-        name: name.trim() || `${selectedStrategy?.name ?? strategyKey} Auto`,
+        name: name.trim() || `${selectedStrategy?.name ?? strategyKey} ${t.automatedTrading.autoSuffix}`,
         strategy_key: strategyKey,
         params,
         symbols,
@@ -99,7 +97,7 @@ export function AutomatedTrading({
       setLiveText("");
       router.refresh();
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Could not start automated strategy.");
+      setError(exc instanceof Error ? exc.message : t.automatedTrading.createError);
     } finally {
       setLoading(false);
     }
@@ -107,7 +105,7 @@ export function AutomatedTrading({
 
   async function setActive(instance: StrategyInstance, isActive: boolean) {
     if (isLive && isActive && rowLiveText !== "LIVE") {
-      setError("Type LIVE before resuming a live automated strategy.");
+      setError(t.automatedTrading.liveResumeError);
       return;
     }
     setBusyId(instance.id);
@@ -120,7 +118,7 @@ export function AutomatedTrading({
       if (isActive) setRowLiveText("");
       router.refresh();
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Could not update strategy.");
+      setError(exc instanceof Error ? exc.message : t.automatedTrading.updateError);
     } finally {
       setBusyId(null);
     }
@@ -129,17 +127,19 @@ export function AutomatedTrading({
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <WorkbenchPanel
-        title="Automated trading"
-        description={`${health?.broker_env ?? "paper"} · ${health?.openai_sizing_enabled ? health.position_model : `${health?.default_position_allocation_pct ?? 1}% preset`}`}
+        title={t.automatedTrading.title}
+        description={`${brokerEnvLabel(health?.broker_env, locale)} · ${health?.openai_sizing_enabled ? health.position_model : `${health?.default_position_allocation_pct ?? 1}% ${t.pages.overview.preset}`}`}
         actions={
           <Badge variant={health?.trading_enabled ? "default" : "destructive"}>
-            {health?.trading_enabled ? "Trading on" : "Trading off"}
+            {health?.trading_enabled
+              ? t.automatedTrading.tradingOn
+              : t.automatedTrading.tradingOff}
           </Badge>
         }
         contentClassName="flex flex-col gap-4"
       >
         <div className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <Field label="Strategy">
+          <Field label={t.automatedTrading.strategy}>
             <select
               value={strategyKey}
               onChange={(event) => {
@@ -156,22 +156,22 @@ export function AutomatedTrading({
               ))}
             </select>
           </Field>
-          <Field label="Name">
+          <Field label={t.automatedTrading.name}>
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
-              placeholder="Auto name"
+              placeholder={t.automatedTrading.namePlaceholder}
             />
           </Field>
-          <Field label="Symbols">
+          <Field label={t.automatedTrading.symbols}>
             <input
               value={symbolsText}
               onChange={(event) => setSymbolsText(event.target.value)}
               className="h-10 w-full rounded-lg border bg-background px-3 text-sm font-medium uppercase"
             />
           </Field>
-          <Field label="Schedule">
+          <Field label={t.automatedTrading.schedule}>
             <input
               value={HOURLY_SCHEDULE}
               readOnly
@@ -198,7 +198,7 @@ export function AutomatedTrading({
         )}
 
         {isLive && (
-          <Field label="Live confirmation" className="max-w-xs">
+          <Field label={t.automatedTrading.liveConfirmation} className="max-w-xs">
             <input
               value={liveText}
               onChange={(event) => setLiveText(event.target.value)}
@@ -213,24 +213,24 @@ export function AutomatedTrading({
         <div>
           <Button onClick={start} disabled={loading || strategies.length === 0}>
             <Play data-icon="inline-start" />
-            {loading ? "Starting..." : "Start"}
+            {loading ? t.common.starting : t.automatedTrading.start}
           </Button>
         </div>
       </WorkbenchPanel>
 
       <WorkbenchPanel
-        title="Configured"
-        description={`${instances.length} total · ${activeCount} active`}
+        title={t.automatedTrading.configuredTitle}
+        description={`${instances.length} ${t.common.total} · ${activeCount} ${t.automatedTrading.totalActive}`}
         actions={
           <Badge variant={activeCount > 0 ? "default" : "outline"}>
-            {activeCount > 0 ? "Active" : "Idle"}
+            {activeCount > 0 ? t.enums.automationState.active : t.enums.automationState.idle}
           </Badge>
         }
         className="self-start"
         contentClassName="flex flex-col gap-2"
       >
         {isLive && instances.some((instance) => !instance.is_active) && (
-          <Field label="Resume live confirmation">
+          <Field label={t.automatedTrading.resumeLiveConfirmation}>
             <input
               value={rowLiveText}
               onChange={(event) => setRowLiveText(event.target.value)}
@@ -250,13 +250,13 @@ export function AutomatedTrading({
                 </p>
               </div>
               <Badge variant={instance.is_active ? "default" : "outline"}>
-                {instance.is_active ? "On" : "Off"}
+                {instance.is_active ? t.common.on : t.common.off}
               </Badge>
             </div>
             <div className="mt-3 space-y-1 font-mono text-xs text-muted-foreground">
-              <p className="truncate">{instance.symbols.join(", ") || "No symbols"}</p>
-              <p>{instance.schedule || "No schedule"}</p>
-              <p>Last: {formatDate(instance.last_run_at)}</p>
+              <p className="truncate">{instance.symbols.join(", ") || t.common.noSymbols}</p>
+              <p>{instance.schedule || t.common.noSchedule}</p>
+              <p>{t.automatedTrading.last}: {formatDateTime(instance.last_run_at, locale)}</p>
             </div>
             {instance.last_error && (
               <p className="mt-2 line-clamp-2 text-xs text-red-600">{instance.last_error}</p>
@@ -270,7 +270,7 @@ export function AutomatedTrading({
                   disabled={busyId === instance.id}
                 >
                   <Pause data-icon="inline-start" />
-                  Stop
+                  {t.automatedTrading.stop}
                 </Button>
               ) : (
                 <Button
@@ -280,7 +280,7 @@ export function AutomatedTrading({
                   disabled={busyId === instance.id}
                 >
                   <RotateCcw data-icon="inline-start" />
-                  Resume
+                  {t.automatedTrading.resume}
                 </Button>
               )}
             </div>
@@ -288,7 +288,7 @@ export function AutomatedTrading({
         ))}
 
         {instances.length === 0 && (
-          <EmptyState className="py-5 text-left">No strategies configured yet.</EmptyState>
+          <EmptyState className="py-5 text-left">{t.automatedTrading.noStrategiesConfigured}</EmptyState>
         )}
       </WorkbenchPanel>
     </section>

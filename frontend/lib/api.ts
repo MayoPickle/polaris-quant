@@ -22,15 +22,24 @@ import type {
   StrategyInstanceCreate,
   StrategyInstanceUpdate,
 } from "@/types";
+import type { Locale } from "@/lib/i18n/config";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  locale?: Locale
+): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  if (locale) headers.set("Accept-Language", locale);
+
   const res = await fetch(`${BASE_URL}${path}`, {
     cache: "no-store",
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers,
   });
   if (!res.ok) {
     const detail = await res.text();
@@ -43,8 +52,8 @@ export const api = {
   health: () => request<Health>("/health"),
 
   // Strategies
-  availableStrategies: () =>
-    request<StrategyDescriptor[]>("/strategies/available"),
+  availableStrategies: (locale?: Locale) =>
+    request<StrategyDescriptor[]>("/strategies/available", undefined, locale),
   listStrategies: () => request<StrategyInstance[]>("/strategies"),
   createStrategy: (body: StrategyInstanceCreate) =>
     request<StrategyInstance>("/strategies", {
@@ -66,13 +75,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  backtestUniverses: () =>
-    request<BacktestUniverse[]>("/strategies/backtest/universes"),
+  backtestUniverses: (locale?: Locale) =>
+    request<BacktestUniverse[]>("/strategies/backtest/universes", undefined, locale),
   createBatchBacktest: (body: BatchBacktestRequest) =>
     request<BatchBacktestJob>("/strategies/backtest/batch", {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  latestBatchBacktest: () =>
+    request<BatchBacktestJob | null>("/strategies/backtest/batch/latest"),
   batchBacktest: (jobId: string) =>
     request<BatchBacktestJob>(`/strategies/backtest/batch/${jobId}`),
   batchBacktestReport: (jobId: string) =>

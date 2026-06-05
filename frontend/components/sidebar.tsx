@@ -6,10 +6,14 @@ import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
 
 import { isNavItemActive, NAV_ITEMS } from "@/components/nav-items";
+import { LanguageToggle } from "@/components/language-toggle";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar p-3 text-sidebar-foreground md:flex">
@@ -20,11 +24,11 @@ export function Sidebar() {
             Polaris Quant
           </span>
           <span className="block truncate text-xs font-medium text-muted-foreground">
-            Trading workbench
+            {t.app.tagline}
           </span>
         </div>
       </div>
-      <nav className="flex flex-col gap-1" aria-label="Primary navigation">
+      <nav className="flex flex-col gap-1" aria-label={t.shell.primaryNavigation}>
         {NAV_ITEMS.map((item) => {
           const active = isNavItemActive(pathname, item.href);
           const Icon = item.icon;
@@ -42,15 +46,19 @@ export function Sidebar() {
               )}
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
-              {item.label}
+              {t.nav[item.labelKey]}
             </Link>
           );
         })}
       </nav>
+      <div className="mt-4 flex items-center gap-2 px-2">
+        <LanguageToggle />
+        <ThemeToggle />
+      </div>
       <div className="mt-auto rounded-lg border bg-card/55 p-3">
-        <p className="text-xs font-semibold">Session</p>
+        <p className="text-xs font-semibold">{t.shell.sessionTitle}</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          Broker data, strategy runs, and account state stay grouped by workflow.
+          {t.shell.sessionDescription}
         </p>
       </div>
     </aside>

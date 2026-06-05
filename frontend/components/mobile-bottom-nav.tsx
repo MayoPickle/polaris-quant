@@ -4,10 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { isNavItemActive, NAV_ITEMS } from "@/components/nav-items";
+import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
 export function MobileBottomNav() {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur md:hidden">
@@ -29,7 +31,7 @@ export function MobileBottomNav() {
               )}
             >
               <Icon className="size-4" aria-hidden="true" />
-              <span className="truncate">{item.label}</span>
+              <span className="truncate">{t.nav[item.labelKey]}</span>
             </Link>
           );
         })}

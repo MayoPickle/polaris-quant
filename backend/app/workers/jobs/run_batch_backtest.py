@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta, timezone
 
+from rq.exceptions import StopRequested
+from rq.timeouts import JobTimeoutException
 from sqlalchemy.orm import Session
 
 from app.brokers.factory import get_broker
@@ -21,6 +23,7 @@ from app.strategies import registry
 from app.strategies.backtest import run_backtest
 
 logger = get_logger(__name__)
+WORKER_CONTROL_EXCEPTIONS = (JobTimeoutException, StopRequested)
 
 
 def run_batch_backtest_job(job_id: str) -> None:
@@ -80,6 +83,8 @@ def _run_batch_backtest_job(job_id: str) -> None:
                 initial_capital=job_snapshot.initial_capital,
             )
             row = result_from_backtest(job_id, result)
+        except WORKER_CONTROL_EXCEPTIONS:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("Batch backtest %s failed for %s: %s", job_id, symbol, exc)
             row = failed_result(job_id, symbol, str(exc))

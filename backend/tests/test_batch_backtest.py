@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from rq.timeouts import JobTimeoutException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -15,6 +16,7 @@ from app.main import app
 from app.models.backtest import BacktestJob, BacktestJobResult
 from app.models.user import User
 from app.services.backtest_batch_service import build_batch_summary, parse_imported_symbols
+from app.workers.jobs import run_batch_backtest as batch_job_module
 
 
 def test_parse_imported_symbols_handles_text_and_csv() -> None:
@@ -124,6 +126,51 @@ def test_backtest_job_can_commit_with_user_foreign_key() -> None:
         db.commit()
 
         assert db.get(BacktestJob, "job-1") is not None
+
+
+def test_batch_worker_timeout_aborts_job_without_symbol_result(monkeypatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+
+    class TimeoutBroker:
+        def get_bars(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+            raise JobTimeoutException("job timed out")
+
+    monkeypatch.setattr(batch_job_module, "SessionLocal", Session)
+    monkeypatch.setattr(batch_job_module.registry, "load_builtin_strategies", lambda: None)
+    monkeypatch.setattr(batch_job_module, "get_broker", lambda name: TimeoutBroker())
+
+    with Session() as db:
+        db.add(User(id=1, email="test@example.com", hashed_password="x"))
+        db.add(
+            BacktestJob(
+                id="timeout-job",
+                user_id=1,
+                strategy_key="sma_cross",
+                params={},
+                timeframe="1Day",
+                lookback_days=365,
+                initial_capital=100_000,
+                universes=[],
+                symbols=["AAPL", "MSFT"],
+                total_symbols=2,
+                status="queued",
+                report={},
+            )
+        )
+        db.commit()
+
+    batch_job_module.run_batch_backtest_job("timeout-job")
+
+    with Session() as db:
+        job = db.get(BacktestJob, "timeout-job")
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_symbols == 0
+        assert job.current_symbol is None
+        assert "job timed out" in (job.error or "")
+        assert db.query(BacktestJobResult).count() == 0
 
 
 def test_latest_batch_backtest_returns_current_users_newest_job() -> None:

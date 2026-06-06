@@ -9,9 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from rq.exceptions import StopRequested
 from rq.timeouts import JobTimeoutException
-from sqlalchemy.orm import Session
 
-from app.brokers.factory import get_broker
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
@@ -21,8 +19,10 @@ from app.services.backtest_batch_service import (
     failed_result,
     result_from_backtest,
 )
+from app.services.market_data_cache import get_cached_bars
 from app.strategies import registry
 from app.strategies.backtest import run_backtest
+from app.workers.jobs.batch_backtest_state import mark_cancelled, replace_result
 
 logger = get_logger(__name__)
 WORKER_CONTROL_EXCEPTIONS = (JobTimeoutException, StopRequested)
@@ -82,7 +82,7 @@ def _run_batch_backtest_job(job_id: str) -> None:
         if job is None:
             return
         if cancelled or job.status == "cancelled":
-            _mark_cancelled(db, job)
+            mark_cancelled(db, job)
             return
         results = (
             db.query(BacktestJobResult)
@@ -161,8 +161,7 @@ def _run_symbol_backtest(
     end: datetime,
 ) -> BacktestJobResult:
     try:
-        broker = get_broker("alpaca")
-        bars = broker.get_bars(symbol, timeframe=job.timeframe, start=start, end=end)
+        bars = get_cached_bars(symbol, timeframe=job.timeframe, start=start, end=end)
         if len(bars) < 5:
             raise ValueError(f"Not enough historical data for {symbol} to backtest.")
         strategy = registry.create_strategy(job.strategy_key, job.params)
@@ -207,7 +206,7 @@ def _mark_symbol_dispatched(job_id: str, symbol: str) -> bool:
         if job is None:
             return False
         if job.status == "cancelled":
-            _mark_cancelled(db, job)
+            mark_cancelled(db, job)
             return False
         job.current_symbol = symbol
         db.commit()
@@ -219,7 +218,7 @@ def _record_symbol_result(job_id: str, row: BacktestJobResult) -> bool:
         job = db.get(BacktestJob, job_id)
         if job is None:
             return False
-        _replace_result(db, row)
+        replace_result(db, row)
         job.completed_symbols += 1
         if row.status == "completed":
             job.succeeded_symbols += 1
@@ -234,36 +233,6 @@ def _job_is_cancelled(job_id: str) -> bool:
     with SessionLocal() as db:
         job = db.get(BacktestJob, job_id)
         return job is None or job.status == "cancelled"
-
-
-def _replace_result(db: Session, row: BacktestJobResult) -> None:
-    existing = (
-        db.query(BacktestJobResult)
-        .filter(BacktestJobResult.job_id == row.job_id, BacktestJobResult.symbol == row.symbol)
-        .one_or_none()
-    )
-    if existing:
-        existing.status = row.status
-        existing.error = row.error
-        existing.final_equity = row.final_equity
-        existing.total_return_pct = row.total_return_pct
-        existing.buy_hold_return_pct = row.buy_hold_return_pct
-        existing.alpha_return_pct = row.alpha_return_pct
-        existing.num_trades = row.num_trades
-        existing.win_rate_pct = row.win_rate_pct
-        existing.max_drawdown_pct = row.max_drawdown_pct
-        existing.sharpe = row.sharpe
-        existing.equity_curve = row.equity_curve
-        existing.trades = row.trades
-    else:
-        db.add(row)
-
-
-def _mark_cancelled(db: Session, job: BacktestJob) -> None:
-    job.status = "cancelled"
-    job.current_symbol = None
-    job.ended_at = datetime.now(timezone.utc)
-    db.commit()
 
 
 def _backtest_window(lookback_days: int) -> tuple[datetime, datetime]:

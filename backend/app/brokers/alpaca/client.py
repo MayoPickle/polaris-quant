@@ -8,6 +8,7 @@ feed (IEX is free, SIP requires a subscription).
 from __future__ import annotations
 
 from datetime import datetime
+import time
 
 from app.brokers.base import (
     Account,
@@ -18,10 +19,18 @@ from app.brokers.base import (
     Position,
     Quote,
 )
+from app.brokers.alpaca.rate_limit import (
+    RetryConfig,
+    SharedRateLimiter,
+    is_rate_limit_error,
+    retry_delay_for,
+)
 from app.core.config import settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+_MARKET_DATA_LIMITER = SharedRateLimiter(settings.ALPACA_DATA_RATE_LIMIT_PER_MINUTE)
 
 
 class AlpacaClient(BrokerClient):
@@ -43,7 +52,11 @@ class AlpacaClient(BrokerClient):
         from alpaca.data.requests import StockLatestQuoteRequest
 
         req = StockLatestQuoteRequest(symbol_or_symbols=symbol, feed=self._feed)
-        q = self._data.get_stock_latest_quote(req)[symbol]
+        quotes = self._call_market_data(
+            f"latest quote for {symbol}",
+            lambda: self._data.get_stock_latest_quote(req),
+        )
+        q = quotes[symbol]
         bid, ask = float(q.bid_price), float(q.ask_price)
         return Quote(
             symbol=symbol,
@@ -73,7 +86,10 @@ class AlpacaClient(BrokerClient):
             end=end,
             feed=self._feed,
         )
-        bar_set = self._data.get_stock_bars(req)
+        bar_set = self._call_market_data(
+            f"historical bars for {symbol}",
+            lambda: self._data.get_stock_bars(req),
+        )
         rows = bar_set.data.get(symbol, [])
         return [
             Bar(
@@ -86,6 +102,35 @@ class AlpacaClient(BrokerClient):
             )
             for b in rows
         ]
+
+    def _call_market_data(self, operation: str, call):
+        _MARKET_DATA_LIMITER.configure(settings.ALPACA_DATA_RATE_LIMIT_PER_MINUTE)
+        retry_config = RetryConfig(
+            max_retries=max(0, settings.ALPACA_DATA_MAX_RETRIES),
+            base_delay_seconds=max(0.0, settings.ALPACA_DATA_RETRY_BASE_SECONDS),
+            max_delay_seconds=max(0.0, settings.ALPACA_DATA_RETRY_MAX_SECONDS),
+        )
+
+        for attempt in range(retry_config.max_retries + 1):
+            _MARKET_DATA_LIMITER.wait()
+            try:
+                return call()
+            except Exception as exc:
+                if not is_rate_limit_error(exc) or attempt >= retry_config.max_retries:
+                    raise
+
+                delay = retry_delay_for(exc, attempt=attempt, config=retry_config)
+                logger.warning(
+                    "Alpaca market data rate limited during %s; retrying in %.1fs "
+                    "(attempt %s/%s)",
+                    operation,
+                    delay,
+                    attempt + 1,
+                    retry_config.max_retries,
+                )
+                time.sleep(delay)
+
+        raise RuntimeError(f"Alpaca market data call did not return: {operation}")
 
     # ---- Account ----
     def get_account(self) -> Account:

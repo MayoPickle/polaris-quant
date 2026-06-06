@@ -1,6 +1,8 @@
 import type { Locale } from "@/lib/i18n/config";
 import { getDictionary } from "@/lib/i18n/dictionaries";
 
+const DISPLAY_TIME_ZONE = "America/New_York";
+
 export function formatCurrency(
   value: number,
   locale: Locale,
@@ -26,6 +28,7 @@ export function formatDateTime(value: string | null, locale: Locale) {
   return new Date(value).toLocaleString(locale, {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: DISPLAY_TIME_ZONE,
   });
 }
 
@@ -49,6 +52,15 @@ export function batchStatusLabel(status: string | null | undefined, locale: Loca
   return labels[status ?? "idle"] ?? humanize(status ?? "idle");
 }
 
+export function ingestionStatusLabel(status: string | null | undefined, locale: Locale) {
+  return batchStatusLabel(status, locale);
+}
+
+export function ingestionKindLabel(kind: string | null | undefined, locale: Locale) {
+  const labels = getDictionary(locale).enums.ingestionKind as Record<string, string>;
+  return labels[kind ?? "backfill"] ?? humanize(kind ?? "backfill");
+}
+
 export function positionSizingMethodLabel(method: string | null | undefined, locale: Locale) {
   const labels = getDictionary(locale).enums.positionSizingMethod as Record<string, string>;
   return labels[method ?? "fixed_target"] ?? humanize(method ?? "fixed_target");
@@ -63,10 +75,6 @@ export function marketSessionLabel(isOpen: boolean | null | undefined, locale: L
 export function brokerEnvLabel(env: string | null | undefined, locale: Locale) {
   const labels = getDictionary(locale).enums.brokerEnv as Record<string, string>;
   return env ? labels[env] ?? env.toUpperCase() : getDictionary(locale).common.unavailable;
-}
-
-export function countText(count: number, label: string) {
-  return `${count} ${label}`;
 }
 
 function humanize(value: string) {

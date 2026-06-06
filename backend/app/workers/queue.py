@@ -20,6 +20,14 @@ def get_backtest_queue() -> Queue:
     )
 
 
+def get_market_data_queue() -> Queue:
+    return Queue(
+        settings.MARKET_DATA_QUEUE_NAME,
+        connection=get_redis_connection(),
+        default_timeout=settings.MARKET_DATA_JOB_TIMEOUT_SECONDS,
+    )
+
+
 def enqueue_batch_backtest(job_id: str) -> str:
     queue = get_backtest_queue()
     job = queue.enqueue(
@@ -27,5 +35,16 @@ def enqueue_batch_backtest(job_id: str) -> str:
         job_id,
         job_id=job_id,
         job_timeout=settings.BACKTEST_JOB_TIMEOUT_SECONDS,
+    )
+    return job.id
+
+
+def enqueue_market_data_ingestion(job_id: str) -> str:
+    queue = get_market_data_queue()
+    job = queue.enqueue(
+        "app.workers.jobs.run_market_data_ingestion.run_market_data_ingestion_job",
+        job_id,
+        job_id=job_id,
+        job_timeout=settings.MARKET_DATA_JOB_TIMEOUT_SECONDS,
     )
     return job.id

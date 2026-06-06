@@ -14,7 +14,13 @@ import type {
   BatchBacktestReport,
   BatchBacktestRequest,
   Health,
+  MarketClock,
   MarketBarsResponse,
+  MarketDataAssetRefresh,
+  MarketDataCoverage,
+  MarketDataCoverageSummary,
+  MarketDataIngestionJob,
+  MarketDataIngestionJobCreate,
   Order,
   OrderCreate,
   Position,
@@ -105,8 +111,6 @@ export function createApiClient(headerProvider?: HeaderProvider) {
         method: "POST",
         body: JSON.stringify(body),
       }, undefined, headerProvider),
-    logout: () =>
-      request<{ ok: boolean }>("/auth/logout", { method: "POST" }, undefined, headerProvider),
     me: () => request<AuthUser>("/auth/me", undefined, undefined, headerProvider),
 
     // Strategies
@@ -171,7 +175,85 @@ export function createApiClient(headerProvider?: HeaderProvider) {
       });
       return request<MarketBarsResponse>(`/market/bars?${params}`, undefined, undefined, headerProvider);
     },
-    marketClock: () => request<{ is_open: boolean }>("/market/clock", undefined, undefined, headerProvider),
+    marketClock: () => request<MarketClock>("/market/clock", undefined, undefined, headerProvider),
+
+    // Market data ingestion
+    marketDataRefreshAssets: () =>
+      request<MarketDataAssetRefresh>(
+        "/market-data/assets/refresh",
+        { method: "POST" },
+        undefined,
+        headerProvider
+      ),
+    marketDataCreateIngestionJob: (body: MarketDataIngestionJobCreate) =>
+      request<MarketDataIngestionJob>(
+        "/market-data/ingestion-jobs",
+        { method: "POST", body: JSON.stringify(body) },
+        undefined,
+        headerProvider
+      ),
+    marketDataIngestionJobs: (
+      options: { kind?: string; status?: string; limit?: number; offset?: number } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (options.kind) params.set("kind", options.kind);
+      if (options.status) params.set("status", options.status);
+      if (options.limit) params.set("limit", String(options.limit));
+      if (options.offset) params.set("offset", String(options.offset));
+      const query = params.toString();
+      return request<MarketDataIngestionJob[]>(
+        `/market-data/ingestion-jobs${query ? `?${query}` : ""}`,
+        undefined,
+        undefined,
+        headerProvider
+      );
+    },
+    marketDataIngestionJob: (jobId: string) =>
+      request<MarketDataIngestionJob>(
+        `/market-data/ingestion-jobs/${jobId}`,
+        undefined,
+        undefined,
+        headerProvider
+      ),
+    marketDataPauseIngestionJob: (jobId: string) =>
+      request<MarketDataIngestionJob>(
+        `/market-data/ingestion-jobs/${jobId}/pause`,
+        { method: "POST" },
+        undefined,
+        headerProvider
+      ),
+    marketDataResumeIngestionJob: (jobId: string) =>
+      request<MarketDataIngestionJob>(
+        `/market-data/ingestion-jobs/${jobId}/resume`,
+        { method: "POST" },
+        undefined,
+        headerProvider
+      ),
+    marketDataCoverage: (
+      symbol: string,
+      options: { provider?: string; feed?: string; timeframe?: string; adjustment?: string } = {}
+    ) => {
+      const params = new URLSearchParams({
+        symbol,
+        timeframe: options.timeframe ?? "1Min",
+        provider: options.provider ?? "alpaca",
+        feed: options.feed ?? "sip",
+        adjustment: options.adjustment ?? "split",
+      });
+      return request<MarketDataCoverage[]>(
+        `/market-data/coverage?${params}`,
+        undefined,
+        undefined,
+        headerProvider
+      );
+    },
+    marketDataCoverageSummary: () =>
+      request<MarketDataCoverageSummary>(
+        "/market-data/coverage/summary",
+        undefined,
+        undefined,
+        headerProvider
+      ),
   };
 }
 

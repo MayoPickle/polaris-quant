@@ -15,7 +15,9 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
 from app.models.strategy import StrategyInstance
+from app.services.market_data_ingestion import create_daily_sync_job
 from app.workers.jobs.run_strategy import run_strategy_instance
+from app.workers.queue import enqueue_market_data_ingestion
 
 logger = get_logger(__name__)
 
@@ -58,6 +60,22 @@ def _reconcile_strategies(scheduler: BlockingScheduler) -> None:
         db.close()
 
 
+def _enqueue_daily_market_data_sync() -> None:
+    db = SessionLocal()
+    try:
+        job = create_daily_sync_job(db)
+        if job.rq_job_id:
+            logger.info("Market-data sync job %s is already queued as %s", job.id, job.rq_job_id)
+            return
+        job.rq_job_id = enqueue_market_data_ingestion(job.id)
+        db.commit()
+        logger.info("Queued market-data sync job %s as %s", job.id, job.rq_job_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not queue daily market-data sync")
+    finally:
+        db.close()
+
+
 def build_scheduler() -> BlockingScheduler:
     scheduler = BlockingScheduler(timezone=settings.SCHEDULER_TIMEZONE)
     scheduler.add_job(
@@ -65,6 +83,12 @@ def build_scheduler() -> BlockingScheduler:
         IntervalTrigger(seconds=60, timezone=settings.SCHEDULER_TIMEZONE),
         args=[scheduler],
         id="strategy-reconcile",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _enqueue_daily_market_data_sync,
+        CronTrigger.from_crontab(settings.MARKET_DATA_SYNC_CRON, timezone=settings.SCHEDULER_TIMEZONE),
+        id="market-data-daily-sync",
         replace_existing=True,
     )
     _reconcile_strategies(scheduler)

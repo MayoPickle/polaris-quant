@@ -1,74 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { createPortal } from "react-dom"
+import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { XIcon } from "lucide-react"
 import { useI18n } from "@/lib/i18n/client"
 
-type DialogContextValue = {
-  open: boolean
-  setOpen: (open: boolean) => void
-  titleId: string
-  descriptionId: string
-}
-
-const DialogContext = React.createContext<DialogContextValue | null>(null)
-
-function useDialogContext() {
-  const context = React.useContext(DialogContext)
-
-  if (!context) {
-    throw new Error("Dialog components must be used inside <Dialog>.")
-  }
-
-  return context
-}
-
-function Dialog({
-  open: openProp,
-  defaultOpen = false,
-  onOpenChange,
-  children,
-}: {
-  children: React.ReactNode
-  open?: boolean
-  defaultOpen?: boolean
-  onOpenChange?: (open: boolean) => void
-}) {
-  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen)
-  const generatedId = React.useId()
-  const open = openProp ?? uncontrolledOpen
-
-  const setOpen = React.useCallback(
-    (nextOpen: boolean) => {
-      if (openProp === undefined) {
-        setUncontrolledOpen(nextOpen)
-      }
-
-      onOpenChange?.(nextOpen)
-    },
-    [onOpenChange, openProp]
-  )
-
-  const contextValue = React.useMemo(
-    () => ({
-      open,
-      setOpen,
-      titleId: `${generatedId}-title`,
-      descriptionId: `${generatedId}-description`,
-    }),
-    [generatedId, open, setOpen]
-  )
-
-  return (
-    <DialogContext.Provider value={contextValue}>
-      {children}
-    </DialogContext.Provider>
-  )
-}
+import { Dialog, useDialogContext } from "./dialog-context"
+import { DialogClose, DialogOverlay, DialogPortal } from "./dialog-primitives"
 
 function DialogTrigger({
   onClick,
@@ -93,67 +32,6 @@ function DialogTrigger({
   )
 }
 
-function DialogPortal({ children }: { children: React.ReactNode }) {
-  const { open } = useDialogContext()
-
-  if (!open || typeof document === "undefined") {
-    return null
-  }
-
-  return createPortal(
-    <div data-slot="dialog-portal">{children}</div>,
-    document.body
-  )
-}
-
-function DialogClose({
-  onClick,
-  ...props
-}: React.ComponentProps<typeof Button>) {
-  const { setOpen } = useDialogContext()
-
-  return (
-    <Button
-      {...props}
-      data-slot="dialog-close"
-      onClick={(event) => {
-        onClick?.(event)
-
-        if (!event.defaultPrevented) {
-          setOpen(false)
-        }
-      }}
-    />
-  )
-}
-
-function DialogOverlay({
-  className,
-  onMouseDown,
-  ...props
-}: React.ComponentProps<"div">) {
-  const { setOpen } = useDialogContext()
-
-  return (
-    <div
-      {...props}
-      data-slot="dialog-overlay"
-      className={cn(
-        "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
-        className
-      )}
-      role="presentation"
-      onMouseDown={(event) => {
-        onMouseDown?.(event)
-
-        if (!event.defaultPrevented && event.target === event.currentTarget) {
-          setOpen(false)
-        }
-      }}
-    />
-  )
-}
-
 function DialogContent({
   className,
   children,
@@ -167,9 +45,7 @@ function DialogContent({
   const contentRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
-    if (!open) {
-      return
-    }
+    if (!open) return
 
     const previouslyFocused = document.activeElement
     const previousOverflow = document.body.style.overflow
@@ -187,9 +63,7 @@ function DialogContent({
   }, [open])
 
   React.useEffect(() => {
-    if (!open) {
-      return
-    }
+    if (!open) return
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -199,10 +73,7 @@ function DialogContent({
     }
 
     document.addEventListener("keydown", handleKeyDown)
-
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown)
-    }
+    return () => document.removeEventListener("keydown", handleKeyDown)
   }, [open, setOpen])
 
   return (
@@ -231,8 +102,7 @@ function DialogContent({
             className="absolute top-2 right-2"
             size="icon-sm"
           >
-            <XIcon
-            />
+            <XIcon />
             <span className="sr-only">{t.common.close}</span>
           </DialogClose>
         )}
@@ -251,33 +121,6 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function DialogFooter({
-  className,
-  showCloseButton = false,
-  children,
-  ...props
-}: React.ComponentProps<"div"> & {
-  showCloseButton?: boolean
-}) {
-  return (
-    <div
-      data-slot="dialog-footer"
-      className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
-        className
-      )}
-      {...props}
-    >
-      {children}
-      {showCloseButton && (
-        <DialogClose variant="outline">
-          Close
-        </DialogClose>
-      )}
-    </div>
-  )
-}
-
 function DialogTitle({ className, ...props }: React.ComponentProps<"h2">) {
   const { titleId } = useDialogContext()
 
@@ -285,10 +128,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<"h2">) {
     <h2
       data-slot="dialog-title"
       id={titleId}
-      className={cn(
-        "font-heading text-base leading-none font-medium",
-        className
-      )}
+      className={cn("font-heading text-base leading-none font-medium", className)}
       {...props}
     />
   )
@@ -315,13 +155,10 @@ function DialogDescription({
 
 export {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
-  DialogOverlay,
-  DialogPortal,
   DialogTitle,
   DialogTrigger,
 }
+

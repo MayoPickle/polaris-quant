@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BrainCircuit,
   BriefcaseBusiness,
+  Database,
   LayoutDashboard,
   ListOrdered,
   Search,
@@ -22,6 +23,7 @@ export const NAV_ITEMS: NavItem[] = [
   { labelKey: "portfolio", href: "/portfolio", icon: BriefcaseBusiness },
   { labelKey: "orders", href: "/orders", icon: ListOrdered },
   { labelKey: "market", href: "/market", icon: Search },
+  { labelKey: "data", href: "/data", icon: Database },
 ];
 
 export function isNavItemActive(pathname: string, href: string) {

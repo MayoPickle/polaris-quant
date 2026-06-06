@@ -46,6 +46,22 @@ class Settings(BaseSettings):
     ALPACA_LIVE_BASE_URL: str = "https://api.alpaca.markets"
     ALPACA_DATA_URL: str = "https://data.alpaca.markets"
     ALPACA_DATA_FEED: Literal["iex", "sip"] = "iex"
+    ALPACA_DATA_RATE_LIMIT_PER_MINUTE: int = 180
+    ALPACA_DATA_MAX_RETRIES: int = 4
+    ALPACA_DATA_RETRY_BASE_SECONDS: float = 5.0
+    ALPACA_DATA_RETRY_MAX_SECONDS: float = 60.0
+
+    # ---- Market data cache ----
+    MARKET_DATA_QUEUE_NAME: str = "market_data"
+    MARKET_DATA_JOB_TIMEOUT_SECONDS: int = 60 * 60 * 24
+    MARKET_DATA_WORKER_MODE: Literal["simple", "fork"] = "simple"
+    MARKET_DATA_DEFAULT_PROVIDER: str = "alpaca"
+    MARKET_DATA_DEFAULT_FEED: str = "sip"
+    MARKET_DATA_DEFAULT_TIMEFRAME: Literal["1Min", "1Hour", "1Day"] = "1Min"
+    MARKET_DATA_DEFAULT_ADJUSTMENT: str = "split"
+    MARKET_DATA_BACKFILL_START: str = "2016-01-01"
+    MARKET_DATA_SYNC_CRON: str = "30 17 * * 1-5"
+    MARKET_DATA_SYMBOLS_PER_REQUEST: int = 20
 
     # ---- Scheduler / market hours ----
     SCHEDULER_TIMEZONE: str = "America/New_York"

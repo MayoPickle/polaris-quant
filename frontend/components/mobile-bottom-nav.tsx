@@ -13,7 +13,7 @@ export function MobileBottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-2 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur md:hidden">
-      <div className="grid grid-cols-5 gap-1">
+      <div className="grid grid-cols-6 gap-1">
         {NAV_ITEMS.map((item) => {
           const active = isNavItemActive(pathname, item.href);
           const Icon = item.icon;

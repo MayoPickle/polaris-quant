@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 
 import { LanguageToggle } from "@/components/language-toggle";
 import { Logo } from "@/components/logo";
-import { LogoutButton } from "@/components/logout-button";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -51,7 +50,6 @@ export async function AppShell({
             <div className="flex items-center gap-2">
               <LanguageToggle />
               <ThemeToggle />
-              <LogoutButton compact />
             </div>
           </div>
         </header>
@@ -69,10 +67,11 @@ export async function AppShell({
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2 md:justify-end">
-                {actions}
-                <LogoutButton />
-              </div>
+              {actions && (
+                <div className="flex items-center gap-2 md:justify-end">
+                  {actions}
+                </div>
+              )}
             </div>
           </header>
 

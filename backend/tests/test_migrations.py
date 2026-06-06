@@ -48,6 +48,10 @@ def test_alembic_upgrade_head_from_empty_database(tmp_path: Path) -> None:
         "universe_symbols",
         "backtest_jobs",
         "backtest_job_results",
+        "market_assets",
+        "market_bars",
+        "market_data_coverage",
+        "market_data_ingestion_jobs",
     } <= tables
     assert {"last_run_at", "last_error"} <= strategy_columns
 

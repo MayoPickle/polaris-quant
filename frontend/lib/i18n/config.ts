@@ -1,6 +1,6 @@
 export const LOCALE_COOKIE = "polaris_locale";
-export const DEFAULT_LOCALE = "en-US";
-export const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
+const DEFAULT_LOCALE = "en-US";
+const SUPPORTED_LOCALES = ["zh-CN", "en-US"] as const;
 
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 

@@ -279,6 +279,8 @@ export interface BatchBacktestSummary {
   succeeded_symbols?: number;
   failed_symbols?: number;
   average_return_pct?: number;
+  average_buy_hold_return_pct?: number;
+  average_alpha_return_pct?: number;
   median_return_pct?: number;
   average_sharpe?: number;
   average_max_drawdown_pct?: number;

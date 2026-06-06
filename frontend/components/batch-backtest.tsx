@@ -16,6 +16,14 @@ import { ChevronLeft, ChevronRight, FileUp, Play, RefreshCw, Square } from "luci
 
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -64,6 +72,20 @@ type RankingSortKey =
   | "final_equity";
 type SortDirection = "asc" | "desc";
 type RankedResult = BatchBacktestSymbolResult & { rank: number };
+type AggregateMetrics = {
+  successfulSymbols: number;
+  averageReturnPct: number | null;
+  averageBuyHoldReturnPct: number | null;
+  averageAlphaReturnPct: number | null;
+  medianReturnPct: number | null;
+  averageSharpe: number | null;
+  averageMaxDrawdownPct: number | null;
+  averageWinRatePct: number | null;
+  averageTrades: number | null;
+  averageFinalEquity: number | null;
+  totalTrades: number;
+  successRatePct: number | null;
+};
 
 function paramsFor(s?: StrategyDescriptor): Record<string, number> {
   const props = (s?.param_schema?.properties as Record<string, ParamSpec>) ?? {};
@@ -508,6 +530,8 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
   const medianResult = completed.find((r) => r.symbol === medianSymbol);
   const { chartData, symbols } = representativeChartData(report);
   const distribution = report.summary.return_distribution ?? [];
+  const aggregate = aggregateMetrics(report, completed, failed);
+  const reportMeta = `${report.job.strategy_key} · ${report.job.timeframe} · ${report.job.lookback_days} days · ${usd(report.job.initial_capital)} · ${positionSizingMethodLabel(report.job.position_sizing.method, locale)} · ${report.job.position_size_pct.toFixed(0)}%`;
 
   return (
     <section data-testid="batch-report" className="flex min-w-0 flex-col gap-5 border-t pt-5">
@@ -516,10 +540,7 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
           <div className="min-w-0">
             <h3 className="text-base font-semibold">{t.batchBacktest.reportTitle}</h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              {report.job.strategy_key} · {report.job.timeframe} ·{" "}
-              {report.job.lookback_days} days · {usd(report.job.initial_capital)} ·{" "}
-              {positionSizingMethodLabel(report.job.position_sizing.method, locale)} ·{" "}
-              {report.job.position_size_pct.toFixed(0)}%
+              {reportMeta}
             </p>
           </div>
           <Badge variant={report.job.status === "completed" ? "default" : "secondary"}>
@@ -527,7 +548,14 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
           </Badge>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <AggregateMetricsDialog
+          aggregate={aggregate}
+          failedCount={failed.length}
+          reportMeta={reportMeta}
+          totalSymbols={report.job.total_symbols}
+        />
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <MetricBox
             label={t.batchBacktest.coverage}
             value={`${completed.length}/${report.job.total_symbols}`}
@@ -686,6 +714,120 @@ function BatchReport({ report }: { report: BatchBacktestReport }) {
         </div>
       )}
     </section>
+  );
+}
+
+function AggregateMetricsDialog({
+  aggregate,
+  failedCount,
+  reportMeta,
+  totalSymbols,
+}: {
+  aggregate: AggregateMetrics;
+  failedCount: number;
+  reportMeta: string;
+  totalSymbols: number;
+}) {
+  const { locale, t } = useI18n();
+  const usd = (n: number) =>
+    formatCurrency(n, locale, { maximumFractionDigits: 0 });
+
+  const primaryMetrics = [
+    {
+      label: t.batchBacktest.averageReturn,
+      value: pct(aggregate.averageReturnPct),
+      tone: toneFor(aggregate.averageReturnPct),
+    },
+    {
+      label: t.batchBacktest.averageMaxDd,
+      value: pct(aggregate.averageMaxDrawdownPct),
+      tone: "negative" as const,
+    },
+    {
+      label: t.batchBacktest.averageSharpe,
+      value: num(aggregate.averageSharpe),
+      tone: "neutral" as const,
+    },
+    {
+      label: t.batchBacktest.totalTrades,
+      value: String(aggregate.totalTrades),
+      tone: "neutral" as const,
+    },
+  ];
+  const detailMetrics = [
+    { label: t.batchBacktest.coverage, value: `${aggregate.successfulSymbols}/${totalSymbols}` },
+    { label: t.batchBacktest.buyHold, value: pct(aggregate.averageBuyHoldReturnPct) },
+    { label: t.batchBacktest.alpha, value: pct(aggregate.averageAlphaReturnPct) },
+    { label: t.batchBacktest.medianReturn, value: pct(aggregate.medianReturnPct) },
+    { label: t.batchBacktest.winRate, value: pct(aggregate.averageWinRatePct) },
+    { label: t.batchBacktest.trades, value: num(aggregate.averageTrades) },
+    {
+      label: t.batchBacktest.finalEquity,
+      value:
+        aggregate.averageFinalEquity === null
+          ? num(null)
+          : usd(aggregate.averageFinalEquity),
+    },
+    { label: t.batchBacktest.failures, value: String(failedCount) },
+  ];
+
+  return (
+    <Dialog>
+      <DialogTrigger
+        className="mt-4 block w-full rounded-lg border bg-background p-4 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        aria-label={t.batchBacktest.reportTitle}
+      >
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-semibold">{t.batchBacktest.reportTitle}</p>
+          <p className="text-xs text-muted-foreground">
+            {aggregate.successfulSymbols}/{totalSymbols} {t.batchBacktest.successfulSymbols}
+          </p>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {primaryMetrics.map((metric) => (
+            <AggregateMetricCell
+              key={metric.label}
+              label={metric.label}
+              value={metric.value}
+              tone={metric.tone}
+            />
+          ))}
+        </div>
+      </DialogTrigger>
+      <DialogContent className="max-h-[min(42rem,calc(100dvh-2rem))] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{t.batchBacktest.reportTitle}</DialogTitle>
+          <DialogDescription>{reportMeta}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {detailMetrics.map((metric) => (
+            <MetricBox key={metric.label} label={metric.label} value={metric.value} />
+          ))}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border p-3">
+            <p className="text-xs text-muted-foreground">{t.batchBacktest.averageReturn}</p>
+            <p className={cn("mt-2 text-xl font-semibold", returnTone(aggregate.averageReturnPct))}>
+              {pct(aggregate.averageReturnPct)}
+            </p>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+              <Metric label={t.batchBacktest.buyHold} value={pct(aggregate.averageBuyHoldReturnPct)} />
+              <Metric label={t.batchBacktest.alpha} value={pct(aggregate.averageAlphaReturnPct)} />
+            </dl>
+          </div>
+          <div className="rounded-lg border p-3">
+            <p className="text-xs text-muted-foreground">{t.batchBacktest.averageMaxDd}</p>
+            <p className="mt-2 text-xl font-semibold text-red-600">
+              {pct(aggregate.averageMaxDrawdownPct)}
+            </p>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+              <Metric label={t.batchBacktest.sharpe} value={num(aggregate.averageSharpe)} />
+              <Metric label={t.batchBacktest.winRate} value={pct(aggregate.averageWinRatePct)} />
+            </dl>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1019,6 +1161,60 @@ function defaultSortDirection(key: RankingSortKey): SortDirection {
   return "desc";
 }
 
+function aggregateMetrics(
+  report: BatchBacktestReport,
+  completed: BatchBacktestSymbolResult[],
+  failed: BatchBacktestSymbolResult[]
+): AggregateMetrics {
+  const totalSymbols = report.job.total_symbols || completed.length + failed.length;
+  const successfulSymbols = completed.length;
+
+  return {
+    successfulSymbols,
+    averageReturnPct: averageNumeric(completed.map((r) => r.total_return_pct)),
+    averageBuyHoldReturnPct:
+      report.summary.average_buy_hold_return_pct ??
+      averageNumeric(completed.map((r) => r.buy_hold_return_pct)),
+    averageAlphaReturnPct:
+      report.summary.average_alpha_return_pct ??
+      averageNumeric(completed.map((r) => r.alpha_return_pct)),
+    medianReturnPct:
+      report.summary.median_return_pct ??
+      medianNumeric(completed.map((r) => r.total_return_pct)),
+    averageSharpe:
+      report.summary.average_sharpe ??
+      averageNumeric(completed.map((r) => r.sharpe)),
+    averageMaxDrawdownPct:
+      report.summary.average_max_drawdown_pct ??
+      averageNumeric(completed.map((r) => r.max_drawdown_pct)),
+    averageWinRatePct: averageNumeric(completed.map((r) => r.win_rate_pct)),
+    averageTrades: averageNumeric(completed.map((r) => r.num_trades)),
+    averageFinalEquity: averageNumeric(completed.map((r) => r.final_equity)),
+    totalTrades:
+      report.summary.total_trades ??
+      completed.reduce((sum, row) => sum + (row.num_trades ?? 0), 0),
+    successRatePct: totalSymbols > 0 ? (successfulSymbols / totalSymbols) * 100 : null,
+  };
+}
+
+function averageNumeric(values: Array<number | null | undefined>) {
+  const nums = values.filter(isFiniteNumber);
+  if (nums.length === 0) return null;
+  return nums.reduce((sum, value) => sum + value, 0) / nums.length;
+}
+
+function medianNumeric(values: Array<number | null | undefined>) {
+  const nums = values.filter(isFiniteNumber).sort((a, b) => a - b);
+  if (nums.length === 0) return null;
+  const mid = Math.floor(nums.length / 2);
+  if (nums.length % 2 === 1) return nums[mid];
+  return (nums[mid - 1] + nums[mid]) / 2;
+}
+
+function isFiniteNumber(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function representativeChartData(report: BatchBacktestReport) {
   const reps = report.summary.representative_symbols ?? {};
   const symbols = [reps.best, reps.median, reps.worst].filter(
@@ -1065,6 +1261,31 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1 truncate font-medium">{value}</dd>
+    </div>
+  );
+}
+
+function AggregateMetricCell({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  tone?: "positive" | "negative" | "neutral";
+}) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          "mt-1 text-xl font-semibold",
+          tone === "positive" && "text-green-600",
+          tone === "negative" && "text-red-600"
+        )}
+      >
+        {value}
+      </p>
     </div>
   );
 }

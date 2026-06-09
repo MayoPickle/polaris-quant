@@ -5,7 +5,7 @@ export interface Quote {
   last_price: number;
 }
 
-interface MarketBar {
+export interface MarketBar {
   timestamp: string;
   open: number;
   high: number;
@@ -27,4 +27,25 @@ export interface MarketBarsResponse {
 
 export interface MarketClock {
   is_open: boolean;
+}
+
+export interface MarketSnapshot {
+  symbol: string;
+  latest_trade_price: number | null;
+  latest_trade_timestamp: string | null;
+  latest_trade_size: number | null;
+  bid_price: number | null;
+  ask_price: number | null;
+  spread: number | null;
+  midpoint_price: number | null;
+  day_open: number | null;
+  day_high: number | null;
+  day_low: number | null;
+  day_close: number | null;
+  day_volume: number | null;
+  previous_close: number | null;
+}
+
+export interface MarketSnapshotsResponse {
+  snapshots: MarketSnapshot[];
 }

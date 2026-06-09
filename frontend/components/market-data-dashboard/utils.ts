@@ -17,12 +17,12 @@ export function statusVariant(
 ): "default" | "secondary" | "destructive" | "outline" {
   if (status === "completed" || status === "running") return "default";
   if (status === "failed") return "destructive";
-  if (status === "pausing" || status === "paused") return "secondary";
+  if (status === "cancelling" || status === "pausing" || status === "paused") return "secondary";
   return "outline";
 }
 
 export function activeJob(job: MarketDataIngestionJob): boolean {
-  return ["queued", "running", "pausing"].includes(job.status);
+  return ["queued", "running", "cancelling", "pausing"].includes(job.status);
 }
 
 export function formatNumber(value: number, locale: Locale): string {

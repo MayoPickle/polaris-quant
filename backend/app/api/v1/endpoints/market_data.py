@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -10,17 +10,21 @@ from app.db.session import get_db
 from app.models.market_data import MarketDataCoverage, MarketDataIngestionJob
 from app.schemas.market_data import (
     MarketAssetRefreshRead,
+    MarketDataCoverageReconcileRead,
     MarketDataCoverageRead,
     MarketDataCoverageSummaryRead,
     MarketDataIngestionJobCreate,
     MarketDataIngestionJobRead,
 )
 from app.services.market_data_control import (
+    cancel_ingestion_job,
+    delete_ingestion_job,
     fail_resume_ingestion_job,
     get_ingestion_job_or_404,
     market_data_coverage_summary,
     pause_ingestion_job,
     prepare_resume_ingestion_job,
+    reconcile_market_data_coverage,
 )
 from app.services.market_data_ingestion import create_ingestion_job, refresh_market_assets
 from app.workers.queue import enqueue_market_data_ingestion
@@ -144,11 +148,61 @@ def resume_market_data_ingestion_job(
     return job
 
 
+@router.post(
+    "/ingestion-jobs/{job_id}/cancel",
+    response_model=MarketDataIngestionJobRead,
+)
+def cancel_market_data_ingestion_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> MarketDataIngestionJob:
+    job = get_ingestion_job_or_404(db, job_id)
+    return cancel_ingestion_job(db, job)
+
+
+@router.delete(
+    "/ingestion-jobs/{job_id}",
+    response_class=Response,
+    response_model=None,
+    status_code=204,
+)
+def delete_market_data_ingestion_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+) -> Response:
+    job = get_ingestion_job_or_404(db, job_id)
+    delete_ingestion_job(db, job)
+    return Response(status_code=204)
+
+
 @router.get("/coverage/summary", response_model=MarketDataCoverageSummaryRead)
 def market_data_global_coverage_summary(
     db: Session = Depends(get_db),
 ) -> MarketDataCoverageSummaryRead:
     return MarketDataCoverageSummaryRead(**market_data_coverage_summary(db))
+
+
+@router.post("/coverage/reconcile", response_model=MarketDataCoverageReconcileRead)
+def reconcile_market_data_global_coverage(
+    symbol: str | None = Query(default=None, min_length=1, max_length=16),
+    timeframe: str = Query(default=settings.MARKET_DATA_DEFAULT_TIMEFRAME),
+    provider: str = Query(default=settings.MARKET_DATA_DEFAULT_PROVIDER),
+    feed: str = Query(default=settings.MARKET_DATA_DEFAULT_FEED),
+    adjustment: str = Query(default=settings.MARKET_DATA_DEFAULT_ADJUSTMENT),
+    limit: int = Query(default=settings.MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> MarketDataCoverageReconcileRead:
+    return MarketDataCoverageReconcileRead(
+        **reconcile_market_data_coverage(
+            db,
+            provider=provider,
+            feed=feed,
+            timeframe=timeframe,
+            adjustment=adjustment,
+            symbol=symbol.upper() if symbol else None,
+            limit=limit,
+        )
+    )
 
 
 @router.get("/coverage", response_model=list[MarketDataCoverageRead])

@@ -29,6 +29,7 @@ export const enUSBase = {
       switchToEn: "Switch to English",
     },
   theme: {
+      label: "Theme",
       toggle: "Toggle color mode",
     },
   nav: {
@@ -38,13 +39,22 @@ export const enUSBase = {
       orders: "Orders",
       market: "Market",
       data: "Data",
+      controlCenter: "Control Center",
     },
   shell: {
       primaryNavigation: "Primary navigation",
-      sessionTitle: "Session",
-      sessionDescription:
-        "Broker data, strategy runs, and account state stay grouped by workflow.",
+      sessionTitle: "Market status",
+      sessionDescription: "Current trading session state.",
+      marketStatus: "Market",
       preferencesTitle: "Display",
+      preferencesDescription: "Theme and language for this workspace.",
+      openControlCenter: "Open Control Center",
+      controlCenterDescription:
+        "Market session, preferences, and secondary operations.",
+      operationsTitle: "Operations",
+      operationsDescription: "Order flow and data tools stay one step away.",
+      ordersDescription: "Review order status, fills, and exceptions.",
+      dataDescription: "Manage market-data coverage and ingestion jobs.",
     },
   common: {
       apiOnline: "API online",
@@ -116,6 +126,7 @@ export const enUSBase = {
       batchStatus: {
         queued: "queued",
         running: "running",
+        cancelling: "cancelling",
         pausing: "pausing",
         paused: "paused",
         completed: "completed",

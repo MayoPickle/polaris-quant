@@ -2,9 +2,16 @@
 # For day-to-day dev you can skip this and run SQLite + uvicorn directly
 # (see README). The web and worker share the same image and database.
 
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   redis:
     image: redis:7-alpine
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -14,6 +21,7 @@ services:
   db:
     image: timescale/timescaledb:latest-pg16
     command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
+    logging: *default-logging
     environment:
       POSTGRES_USER: polaris
       POSTGRES_PASSWORD: polaris
@@ -29,24 +37,39 @@ services:
   migrate:
     build: ./backend
     command: sh -c "alembic upgrade head && python -m app.db.seed_dev_user"
+    logging: *default-logging
     env_file:
       - path: ./backend/.env
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      ENV: production
+      DEBUG: "false"
+      SQL_ECHO: "false"
+      SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     depends_on:
       db:
         condition: service_healthy
 
   api:
     build: ./backend
+    logging: *default-logging
     env_file:
       - path: ./backend/.env
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      ENV: production
+      DEBUG: "false"
+      SQL_ECHO: "false"
+      SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
       REDIS_URL: redis://redis:6379/0
+      MARKET_DATA_SYMBOLS_PER_REQUEST: ${MARKET_DATA_SYMBOLS_PER_REQUEST:-25}
+      MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: ${MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY:-true}
+      MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: ${MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS:-50}
     expose:
       - "8000"
     depends_on:
@@ -60,13 +83,22 @@ services:
   worker:
     build: ./backend
     command: python -m app.workers.runtime
+    logging: *default-logging
     env_file:
       - path: ./backend/.env
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      ENV: production
+      DEBUG: "false"
+      SQL_ECHO: "false"
+      SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       REDIS_URL: redis://redis:6379/0
       MARKET_DATA_QUEUE_NAME: ${MARKET_DATA_QUEUE_NAME:-market_data}
+      MARKET_DATA_SYMBOLS_PER_REQUEST: ${MARKET_DATA_SYMBOLS_PER_REQUEST:-25}
+      MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: ${MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY:-true}
+      MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: ${MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS:-50}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -78,11 +110,17 @@ services:
   backtest_worker:
     build: ./backend
     command: python -m app.workers.backtest_worker
+    logging: *default-logging
     env_file:
       - path: ./backend/.env
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      ENV: production
+      DEBUG: "false"
+      SQL_ECHO: "false"
+      SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       migrate:
@@ -95,13 +133,22 @@ services:
   market_data_worker:
     build: ./backend
     command: python -m app.workers.market_data_worker
+    logging: *default-logging
     env_file:
       - path: ./backend/.env
         required: false
     environment:
       DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      ENV: production
+      DEBUG: "false"
+      SQL_ECHO: "false"
+      SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       REDIS_URL: redis://redis:6379/0
       MARKET_DATA_QUEUE_NAME: ${MARKET_DATA_QUEUE_NAME:-market_data}
+      MARKET_DATA_SYMBOLS_PER_REQUEST: ${MARKET_DATA_SYMBOLS_PER_REQUEST:-25}
+      MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: ${MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY:-true}
+      MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: ${MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS:-50}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -115,6 +162,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api/v1}
+    logging: *default-logging
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
@@ -125,6 +173,7 @@ services:
 
   edge:
     image: nginx:1.27-alpine
+    logging: *default-logging
     ports:
       - "3001:80"
     volumes:

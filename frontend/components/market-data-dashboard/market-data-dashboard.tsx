@@ -17,6 +17,7 @@ import type {
   MarketDataIngestionJob,
   MarketDataIngestionJobCreate,
 } from "@/types";
+import { cn } from "@/lib/utils";
 
 import { MarketDataControlPanel } from "./control-panel";
 import { MarketDataCoveragePanel } from "./coverage-panel";
@@ -32,6 +33,11 @@ const EMPTY_SUMMARY: MarketDataCoverageSummary = {
   last_ts: null,
 };
 
+type FeedbackMessage = {
+  tone: "success" | "error";
+  text: string;
+};
+
 export function MarketDataDashboard({
   initialJobs,
   initialSummary,
@@ -44,7 +50,7 @@ export function MarketDataDashboard({
   const [summary, setSummary] = useState(initialSummary ?? EMPTY_SUMMARY);
   const [coverage, setCoverage] = useState<MarketDataCoverage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<FeedbackMessage | null>(null);
 
   const latestBackfill = useMemo(
     () => jobs.find((job) => job.kind === "backfill") ?? null,
@@ -79,7 +85,7 @@ export function MarketDataDashboard({
       await action();
       await refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
+      setMessage({ tone: "error", text: error instanceof Error ? error.message : String(error) });
     } finally {
       setLoading(false);
     }
@@ -109,8 +115,15 @@ export function MarketDataDashboard({
       </MetricGrid>
 
       {message && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {message}
+        <div
+          className={cn(
+            "rounded-lg border px-3 py-2 text-sm",
+            message.tone === "success"
+              ? "border-green-600/30 bg-green-600/10 text-green-700"
+              : "border-destructive/30 bg-destructive/10 text-destructive"
+          )}
+        >
+          {message.text}
         </div>
       )}
 
@@ -120,7 +133,10 @@ export function MarketDataDashboard({
           onRefreshAssets={() =>
             runAction(async () => {
               const result = await api.marketDataRefreshAssets();
-              setMessage(`${t.marketData.assetRefreshSuccess}: ${formatNumber(result.refreshed, locale)}`);
+              setMessage({
+                tone: "success",
+                text: `${t.marketData.assetRefreshSuccess}: ${formatNumber(result.refreshed, locale)}`,
+              });
             })
           }
           onCreate={(payload: MarketDataIngestionJobCreate) =>
@@ -151,6 +167,16 @@ export function MarketDataDashboard({
         onResume={(jobId) =>
           runAction(async () => {
             await api.marketDataResumeIngestionJob(jobId);
+          })
+        }
+        onCancel={(jobId) =>
+          runAction(async () => {
+            await api.marketDataCancelIngestionJob(jobId);
+          })
+        }
+        onDelete={(jobId) =>
+          runAction(async () => {
+            await api.marketDataDeleteIngestionJob(jobId);
           })
         }
       />

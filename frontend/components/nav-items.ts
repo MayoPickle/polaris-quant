@@ -17,13 +17,21 @@ export type NavItem = {
   icon: LucideIcon;
 };
 
-export const NAV_ITEMS: NavItem[] = [
+export const PRIMARY_NAV_ITEMS: NavItem[] = [
   { labelKey: "overview", href: "/", icon: LayoutDashboard },
   { labelKey: "strategies", href: "/strategies", icon: BrainCircuit },
   { labelKey: "portfolio", href: "/portfolio", icon: BriefcaseBusiness },
-  { labelKey: "orders", href: "/orders", icon: ListOrdered },
   { labelKey: "market", href: "/market", icon: Search },
+];
+
+export const CONTROL_CENTER_NAV_ITEMS: NavItem[] = [
+  { labelKey: "orders", href: "/orders", icon: ListOrdered },
   { labelKey: "data", href: "/data", icon: Database },
+];
+
+export const NAV_ITEMS: NavItem[] = [
+  ...PRIMARY_NAV_ITEMS,
+  ...CONTROL_CENTER_NAV_ITEMS,
 ];
 
 export function isNavItemActive(pathname: string, href: string) {

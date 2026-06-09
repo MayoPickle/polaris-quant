@@ -2,13 +2,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from app.api.deps import get_broker_client, get_current_user_id
-from app.brokers.base import Account, Bar, OrderRequest, OrderResult, Position, Quote
+from app.brokers.base import Account, Bar, MarketSnapshot, OrderRequest, OrderResult, Position, Quote
 from app.main import app
 
 
 class FakeMarketBroker:
     def __init__(self) -> None:
         self.calls: list[dict] = []
+        self.snapshot_calls: list[list[str]] = []
 
     def is_market_open(self) -> bool:
         return True
@@ -37,6 +38,33 @@ class FakeMarketBroker:
                 volume=1_500,
             ),
         ]
+
+    def get_market_snapshots(self, symbols: list[str]) -> list[MarketSnapshot]:
+        self.snapshot_calls.append(symbols)
+        out: list[MarketSnapshot] = []
+        for symbol in symbols:
+            base = 102.25 if symbol == "AAPL" else 202.75
+            bid = base - 0.15
+            ask = base + 0.25
+            out.append(
+                MarketSnapshot(
+                    symbol=symbol,
+                    latest_trade_price=base,
+                    latest_trade_timestamp="2026-01-02T15:30:00+00:00",
+                    latest_trade_size=100,
+                    bid_price=bid,
+                    ask_price=ask,
+                    spread=ask - bid,
+                    midpoint_price=(bid + ask) / 2,
+                    day_open=base - 1,
+                    day_high=base + 2,
+                    day_low=base - 3,
+                    day_close=base - 0.5,
+                    day_volume=1_250_000,
+                    previous_close=base - 1.25,
+                )
+            )
+        return out
 
     def get_account(self) -> Account:
         return Account(cash=100_000, equity=100_000, buying_power=100_000)
@@ -70,4 +98,3 @@ def auth_override(user_id: int = 1) -> Iterator[None]:
         yield
     finally:
         app.dependency_overrides.pop(get_current_user_id, None)
-

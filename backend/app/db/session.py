@@ -20,7 +20,7 @@ engine = create_engine(
     _database_url,
     connect_args=_connect_args,
     pool_pre_ping=True,
-    echo=settings.DEBUG and settings.ENV == "development",
+    echo=settings.SQL_ECHO,
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import re
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -26,13 +27,24 @@ from app.services.market_data_ingestion_units import (
     initial_progress_state,
     iter_work_units,
 )
-from app.services.market_data_provider import AlpacaMarketDataProvider, ProviderBar
+from app.services.market_data_provider import (
+    AlpacaMarketDataProvider,
+    InvalidProviderSymbolError,
+    ProviderBar,
+)
 from app.services.market_data_time import (
     UTC,
     as_utc,
     is_regular_session,
     normalize_symbols,
     parse_utc_date,
+)
+
+
+_DEFAULT_INGESTION_SYMBOL_RE = re.compile(r"^[A-Z]{1,5}([.-][A-Z])?$")
+_NON_BAR_ASSET_RE = re.compile(
+    r"\b(contra|contingent value|cvr|right|rights|warrant|escrow|subscription|cash)\b",
+    re.IGNORECASE,
 )
 
 
@@ -101,7 +113,7 @@ def create_daily_sync_job(db: Session) -> MarketDataIngestionJob:
         db.query(MarketDataIngestionJob)
         .filter(
             MarketDataIngestionJob.kind == "daily_sync",
-            MarketDataIngestionJob.status.in_(("queued", "running", "pausing", "paused")),
+            MarketDataIngestionJob.status.in_(("queued", "running", "cancelling", "pausing", "paused")),
         )
         .order_by(MarketDataIngestionJob.created_at.desc())
         .first()
@@ -126,7 +138,10 @@ def run_market_data_ingestion_job(
     with SessionLocal() as db:
         job = db.get(MarketDataIngestionJob, job_id)
         if job is None:
-            raise RuntimeError(f"Market data ingestion job {job_id} not found")
+            return
+        if job.status == "cancelling":
+            _mark_cancelled(db, job)
+            return
         if job.status in {"cancelled", "completed", "paused"}:
             return
         if job.pause_requested:
@@ -153,11 +168,21 @@ def run_market_data_ingestion_job(
                 if unit.index < job.completed_work_units:
                     continue
                 db.refresh(job)
+                if job.status in {"cancelled", "cancelling"}:
+                    _mark_cancelled(db, job)
+                    return
                 if job.pause_requested or job.status == "pausing":
                     _mark_paused(db, job)
                     return
                 _ingest_work_unit(db, job, unit, data_provider)
 
+            db.refresh(job)
+            if job.status in {"cancelled", "cancelling"}:
+                _mark_cancelled(db, job)
+                return
+            if job.pause_requested or job.status == "pausing":
+                _mark_paused(db, job)
+                return
             job.status = "completed"
             job.pause_requested = False
             job.completed_work_units = job.total_work_units
@@ -180,12 +205,16 @@ def _ingest_work_unit(
     unit: MarketDataWorkUnit,
     provider: AlpacaMarketDataProvider,
 ) -> None:
-    job.current_symbol = unit.symbols[0]
+    symbols = _active_unit_symbols(job, unit)
+    job.current_symbol = symbols[0] if symbols else unit.symbols[0]
     job.cursor = unit.cursor
     db.commit()
 
-    bars = provider.get_bars(
-        unit.symbols,
+    bars = _get_bars_skipping_invalid_symbols(
+        db,
+        job,
+        provider,
+        symbols,
         timeframe=job.timeframe,
         start=unit.window_start,
         end=unit.window_end,
@@ -195,7 +224,7 @@ def _ingest_work_unit(
     filtered_bars = [bar for bar in bars if _should_store_bar(job, bar)]
     job.requested_rows += len(bars)
     job.inserted_rows += upsert_market_bars(db, job, filtered_bars)
-    refresh_coverage(db, job, unit.symbols)
+    refresh_coverage(db, job, filtered_bars)
     job.completed_work_units = unit.index + 1
     job.completed_symbols = completed_symbols_for(job)
     job.progress_state = {
@@ -208,6 +237,66 @@ def _ingest_work_unit(
     db.commit()
 
 
+def _get_bars_skipping_invalid_symbols(
+    db: Session,
+    job: MarketDataIngestionJob,
+    provider: AlpacaMarketDataProvider,
+    symbols: list[str],
+    *,
+    timeframe: str,
+    start: datetime,
+    end: datetime,
+    feed: str,
+    adjustment: str,
+) -> list[ProviderBar]:
+    remaining = list(symbols)
+    while remaining:
+        try:
+            return provider.get_bars(
+                remaining,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+                feed=feed,
+                adjustment=adjustment,
+            )
+        except InvalidProviderSymbolError as exc:
+            invalid_symbols = [symbol for symbol in exc.symbols if symbol in remaining]
+            if not invalid_symbols:
+                raise
+            _record_skipped_symbols(job, invalid_symbols)
+            db.commit()
+            invalid_set = set(invalid_symbols)
+            remaining = [symbol for symbol in remaining if symbol not in invalid_set]
+    return []
+
+
+def _active_unit_symbols(job: MarketDataIngestionJob, unit: MarketDataWorkUnit) -> list[str]:
+    skipped_symbols = set(_skipped_symbols(job))
+    return [symbol for symbol in unit.symbols if symbol not in skipped_symbols]
+
+
+def _record_skipped_symbols(job: MarketDataIngestionJob, symbols: list[str]) -> None:
+    progress_state = dict(job.progress_state or {})
+    skipped_symbols = _skipped_symbols(job)
+    seen = set(skipped_symbols)
+    for symbol in symbols:
+        if symbol not in seen:
+            skipped_symbols.append(symbol)
+            seen.add(symbol)
+    progress_state["skipped_symbols"] = skipped_symbols
+    progress_state["skipped_symbol_count"] = len(skipped_symbols)
+    progress_state["last_skipped_symbols"] = symbols
+    job.progress_state = progress_state
+
+
+def _skipped_symbols(job: MarketDataIngestionJob) -> list[str]:
+    value = (job.progress_state or {}).get("skipped_symbols")
+    if not isinstance(value, list):
+        return []
+    return [str(symbol).upper() for symbol in value]
+
+
 def _default_start(kind: str) -> datetime:
     if kind == "daily_sync":
         return datetime.now(UTC) - timedelta(days=7)
@@ -215,7 +304,7 @@ def _default_start(kind: str) -> datetime:
 
 
 def _default_symbols(db: Session, kind: str) -> list[str]:
-    query = db.query(MarketAsset.symbol)
+    query = db.query(MarketAsset)
     if kind == "daily_sync":
         active = (
             query.filter(MarketAsset.status == "active")
@@ -223,9 +312,24 @@ def _default_symbols(db: Session, kind: str) -> list[str]:
             .all()
         )
         if active:
-            return [row[0] for row in active]
+            return [asset.symbol for asset in active if _is_default_ingestion_asset(asset)]
     rows = query.order_by(MarketAsset.symbol.asc()).all()
-    return [row[0] for row in rows]
+    return [asset.symbol for asset in rows if _is_default_ingestion_asset(asset)]
+
+
+def _is_default_ingestion_asset(asset: MarketAsset) -> bool:
+    symbol = asset.symbol.upper()
+    if not _DEFAULT_INGESTION_SYMBOL_RE.match(symbol):
+        return False
+    searchable = " ".join(
+        [
+            symbol,
+            asset.name or "",
+            str((asset.raw or {}).get("name", "")),
+            str((asset.raw or {}).get("class", "")),
+        ]
+    )
+    return _NON_BAR_ASSET_RE.search(searchable) is None
 
 
 def _should_store_bar(job: MarketDataIngestionJob, bar: ProviderBar) -> bool:
@@ -239,4 +343,13 @@ def _mark_paused(db: Session, job: MarketDataIngestionJob) -> None:
     job.pause_requested = True
     job.current_symbol = None
     job.ended_at = datetime.now(UTC)
+    db.commit()
+
+
+def _mark_cancelled(db: Session, job: MarketDataIngestionJob) -> None:
+    job.status = "cancelled"
+    job.pause_requested = False
+    job.current_symbol = None
+    if job.ended_at is None:
+        job.ended_at = datetime.now(UTC)
     db.commit()

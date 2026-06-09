@@ -3,6 +3,7 @@ export type MarketDataIngestionKind = "backfill" | "daily_sync" | "repair";
 export type MarketDataIngestionStatus =
   | "queued"
   | "running"
+  | "cancelling"
   | "pausing"
   | "paused"
   | "completed"
@@ -69,6 +70,11 @@ export interface MarketDataCoverageSummary {
   market_bar_rows: number;
   first_ts: string | null;
   last_ts: string | null;
+}
+
+export interface MarketDataCoverageReconcile {
+  reconciled_symbols: number;
+  row_count: number;
 }
 
 export interface MarketDataAssetRefresh {

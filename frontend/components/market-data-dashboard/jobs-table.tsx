@@ -1,6 +1,6 @@
 "use client";
 
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, Trash2, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,11 +24,15 @@ export function MarketDataJobsTable({
   loading,
   onPause,
   onResume,
+  onCancel,
+  onDelete,
 }: {
   jobs: MarketDataIngestionJob[];
   loading: boolean;
   onPause: (jobId: string) => Promise<void>;
   onResume: (jobId: string) => Promise<void>;
+  onCancel: (jobId: string) => Promise<void>;
+  onDelete: (jobId: string) => Promise<void>;
 }) {
   const { locale, t } = useI18n();
 
@@ -100,22 +104,50 @@ export function MarketDataJobsTable({
                   {formatNumber(job.requested_rows, locale)}
                 </TableCell>
                 <TableCell className="text-right">
-                  {job.status === "paused" ? (
-                    <Button size="sm" variant="outline" disabled={loading} onClick={() => onResume(job.id)}>
-                      <Play data-icon="inline-start" />
-                      {t.marketData.resume}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={loading || !["queued", "running"].includes(job.status)}
-                      onClick={() => onPause(job.id)}
-                    >
-                      <Pause data-icon="inline-start" />
-                      {t.marketData.pause}
-                    </Button>
-                  )}
+                  <div className="flex justify-end gap-2">
+                    {job.status === "paused" && (
+                      <Button size="sm" variant="outline" disabled={loading} onClick={() => onResume(job.id)}>
+                        <Play data-icon="inline-start" />
+                        {t.marketData.resume}
+                      </Button>
+                    )}
+                    {["queued", "running"].includes(job.status) && (
+                      <Button size="sm" variant="outline" disabled={loading} onClick={() => onPause(job.id)}>
+                        <Pause data-icon="inline-start" />
+                        {t.marketData.pause}
+                      </Button>
+                    )}
+                    {["queued", "running", "pausing"].includes(job.status) && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={loading}
+                        onClick={() => {
+                          if (window.confirm(t.marketData.confirmCancelJob)) {
+                            void onCancel(job.id);
+                          }
+                        }}
+                      >
+                        <XCircle data-icon="inline-start" />
+                        {t.marketData.cancel}
+                      </Button>
+                    )}
+                    {!["queued", "running", "cancelling", "pausing"].includes(job.status) && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={loading}
+                        onClick={() => {
+                          if (window.confirm(t.marketData.confirmDeleteJob)) {
+                            void onDelete(job.id);
+                          }
+                        }}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        {t.marketData.deleteJob}
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

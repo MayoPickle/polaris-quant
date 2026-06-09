@@ -12,6 +12,7 @@ IngestionKind = Literal["backfill", "daily_sync", "repair"]
 IngestionStatus = Literal[
     "queued",
     "running",
+    "cancelling",
     "pausing",
     "paused",
     "completed",
@@ -104,3 +105,8 @@ class MarketDataCoverageSummaryRead(BaseModel):
     market_bar_rows: int
     first_ts: datetime | None = None
     last_ts: datetime | None = None
+
+
+class MarketDataCoverageReconcileRead(BaseModel):
+    reconciled_symbols: int
+    row_count: int

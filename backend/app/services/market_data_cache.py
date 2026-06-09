@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -12,7 +12,7 @@ from app.brokers.base import Bar
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.market_data import MarketBar, MarketDataCoverage
-from app.services.market_data_time import as_utc, iter_regular_session_windows
+from app.services.market_data_time import UTC, as_utc, iter_regular_session_windows
 
 
 class MarketDataMissingError(ValueError):
@@ -151,6 +151,8 @@ def _required_bounds(
     end: datetime,
 ) -> tuple[datetime, datetime] | None:
     if timeframe != "1Min":
+        if timeframe == "1Day":
+            return _daily_required_bounds(start, end)
         return start, end
 
     windows = list(iter_regular_session_windows(start, end, settings.MARKET_TIMEZONE))
@@ -159,6 +161,37 @@ def _required_bounds(
     first_start = windows[0][0]
     last_end = windows[-1][1]
     return first_start, last_end - timedelta(minutes=1)
+
+
+def _daily_required_bounds(start: datetime, end: datetime) -> tuple[datetime, datetime] | None:
+    zone = ZoneInfo(settings.MARKET_TIMEZONE)
+    first_day = _first_weekday_on_or_after(as_utc(start).astimezone(zone).date())
+    last_day = _last_weekday_on_or_before(as_utc(end).astimezone(zone).date())
+    if first_day is None or last_day is None or first_day > last_day:
+        return None
+    return _day_bar_timestamp(first_day, zone), _day_bar_timestamp(last_day, zone)
+
+
+def _first_weekday_on_or_after(value: date) -> date | None:
+    current = value
+    for _ in range(7):
+        if current.weekday() < 5:
+            return current
+        current += timedelta(days=1)
+    return None
+
+
+def _last_weekday_on_or_before(value: date) -> date | None:
+    current = value
+    for _ in range(7):
+        if current.weekday() < 5:
+            return current
+        current -= timedelta(days=1)
+    return None
+
+
+def _day_bar_timestamp(value: date, zone: ZoneInfo) -> datetime:
+    return datetime.combine(value, time.min, tzinfo=zone).astimezone(UTC)
 
 
 def _has_intraday_gap(rows: Sequence[MarketBar]) -> bool:

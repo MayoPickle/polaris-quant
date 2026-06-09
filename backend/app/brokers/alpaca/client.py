@@ -8,12 +8,14 @@ feed (IEX is free, SIP requires a subscription).
 from __future__ import annotations
 
 from datetime import datetime
+import math
 import time
 
 from app.brokers.base import (
     Account,
     Bar,
     BrokerClient,
+    MarketSnapshot,
     OrderRequest,
     OrderResult,
     Position,
@@ -102,6 +104,22 @@ class AlpacaClient(BrokerClient):
             )
             for b in rows
         ]
+
+    def get_market_snapshots(self, symbols: list[str]) -> list[MarketSnapshot]:
+        from alpaca.data.requests import StockSnapshotRequest
+
+        req = StockSnapshotRequest(symbol_or_symbols=symbols, feed=self._feed)
+        snapshot_set = self._call_market_data(
+            f"market snapshots for {symbols[0]}..{symbols[-1]}",
+            lambda: self._data.get_stock_snapshot(req),
+        )
+        data = getattr(snapshot_set, "data", snapshot_set)
+
+        snapshots: list[MarketSnapshot] = []
+        for symbol in symbols:
+            snapshot = data.get(symbol) if hasattr(data, "get") else None
+            snapshots.append(_to_market_snapshot(symbol, snapshot))
+        return snapshots
 
     def _call_market_data(self, operation: str, call):
         _MARKET_DATA_LIMITER.configure(settings.ALPACA_DATA_RATE_LIMIT_PER_MINUTE)
@@ -200,3 +218,67 @@ class AlpacaClient(BrokerClient):
             filled_avg_price=float(o.filled_avg_price) if o.filled_avg_price else None,
             raw={"id": str(o.id)},
         )
+
+
+def _to_market_snapshot(symbol: str, snapshot) -> MarketSnapshot:  # noqa: ANN001
+    latest_trade = getattr(snapshot, "latest_trade", None)
+    latest_quote = getattr(snapshot, "latest_quote", None)
+    daily_bar = getattr(snapshot, "daily_bar", None)
+    previous_daily_bar = getattr(snapshot, "previous_daily_bar", None)
+
+    bid, ask, spread, midpoint = _quote_metrics(latest_quote)
+
+    return MarketSnapshot(
+        symbol=symbol,
+        latest_trade_price=_optional_float(getattr(latest_trade, "price", None)),
+        latest_trade_timestamp=_optional_timestamp(getattr(latest_trade, "timestamp", None)),
+        latest_trade_size=_optional_float(getattr(latest_trade, "size", None)),
+        bid_price=bid,
+        ask_price=ask,
+        spread=spread,
+        midpoint_price=midpoint,
+        day_open=_optional_float(getattr(daily_bar, "open", None)),
+        day_high=_optional_float(getattr(daily_bar, "high", None)),
+        day_low=_optional_float(getattr(daily_bar, "low", None)),
+        day_close=_optional_float(getattr(daily_bar, "close", None)),
+        day_volume=_optional_float(getattr(daily_bar, "volume", None)),
+        previous_close=_optional_float(getattr(previous_daily_bar, "close", None)),
+    )
+
+
+def _quote_metrics(quote) -> tuple[float | None, float | None, float | None, float | None]:  # noqa: ANN001
+    bid = _optional_positive_float(getattr(quote, "bid_price", None))
+    ask = _optional_positive_float(getattr(quote, "ask_price", None))
+
+    if bid is not None and ask is not None and ask < bid:
+        return None, None, None, None
+    if bid is None or ask is None:
+        return bid, ask, None, None
+    return bid, ask, ask - bid, (bid + ask) / 2
+
+
+def _optional_positive_float(value) -> float | None:  # noqa: ANN001
+    number = _optional_float(value)
+    if number is None or number <= 0:
+        return None
+    return number
+
+
+def _optional_float(value) -> float | None:  # noqa: ANN001
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _optional_timestamp(value) -> str | None:  # noqa: ANN001
+    if value is None:
+        return None
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)

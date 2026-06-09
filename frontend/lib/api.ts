@@ -16,8 +16,10 @@ import type {
   Health,
   MarketClock,
   MarketBarsResponse,
+  MarketSnapshotsResponse,
   MarketDataAssetRefresh,
   MarketDataCoverage,
+  MarketDataCoverageReconcile,
   MarketDataCoverageSummary,
   MarketDataIngestionJob,
   MarketDataIngestionJobCreate,
@@ -71,6 +73,9 @@ async function request<T>(
   });
   if (!res.ok) {
     throw new Error(await responseErrorMessage(res));
+  }
+  if (res.status === 204) {
+    return undefined as T;
   }
   return res.json() as Promise<T>;
 }
@@ -175,6 +180,15 @@ export function createApiClient(headerProvider?: HeaderProvider) {
       });
       return request<MarketBarsResponse>(`/market/bars?${params}`, undefined, undefined, headerProvider);
     },
+    marketSnapshots: (symbols: string[]) => {
+      const params = new URLSearchParams({ symbols: symbols.join(",") });
+      return request<MarketSnapshotsResponse>(
+        `/market/snapshots?${params}`,
+        undefined,
+        undefined,
+        headerProvider
+      );
+    },
     marketClock: () => request<MarketClock>("/market/clock", undefined, undefined, headerProvider),
 
     // Market data ingestion
@@ -229,6 +243,20 @@ export function createApiClient(headerProvider?: HeaderProvider) {
         undefined,
         headerProvider
       ),
+    marketDataCancelIngestionJob: (jobId: string) =>
+      request<MarketDataIngestionJob>(
+        `/market-data/ingestion-jobs/${jobId}/cancel`,
+        { method: "POST" },
+        undefined,
+        headerProvider
+      ),
+    marketDataDeleteIngestionJob: (jobId: string) =>
+      request<void>(
+        `/market-data/ingestion-jobs/${jobId}`,
+        { method: "DELETE" },
+        undefined,
+        headerProvider
+      ),
     marketDataCoverage: (
       symbol: string,
       options: { provider?: string; feed?: string; timeframe?: string; adjustment?: string } = {}
@@ -254,6 +282,31 @@ export function createApiClient(headerProvider?: HeaderProvider) {
         undefined,
         headerProvider
       ),
+    marketDataReconcileCoverage: (
+      options: {
+        symbol?: string;
+        provider?: string;
+        feed?: string;
+        timeframe?: string;
+        adjustment?: string;
+        limit?: number;
+      } = {}
+    ) => {
+      const params = new URLSearchParams({
+        timeframe: options.timeframe ?? "1Min",
+        provider: options.provider ?? "alpaca",
+        feed: options.feed ?? "sip",
+        adjustment: options.adjustment ?? "split",
+      });
+      if (options.symbol) params.set("symbol", options.symbol);
+      if (options.limit) params.set("limit", String(options.limit));
+      return request<MarketDataCoverageReconcile>(
+        `/market-data/coverage/reconcile?${params}`,
+        { method: "POST" },
+        undefined,
+        headerProvider
+      );
+    },
   };
 }
 

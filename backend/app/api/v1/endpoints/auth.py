@@ -164,7 +164,7 @@ def _set_session_cookie(response: Response, user_id: int) -> None:
         value=token,
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
-        secure=settings.ENV == "production",
+        secure=settings.SESSION_COOKIE_SECURE,
         samesite="lax",
         path="/",
     )
@@ -174,7 +174,7 @@ def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         httponly=True,
-        secure=settings.ENV == "production",
+        secure=settings.SESSION_COOKIE_SECURE,
         samesite="lax",
         path="/",
     )

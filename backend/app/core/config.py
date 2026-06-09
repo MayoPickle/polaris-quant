@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # ---- Security ----
     SECRET_KEY: str = "changeme"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 90
     ENCRYPTION_KEY: str = "changeme"
 
     # ---- Database ----
@@ -61,7 +61,9 @@ class Settings(BaseSettings):
     MARKET_DATA_DEFAULT_ADJUSTMENT: str = "split"
     MARKET_DATA_BACKFILL_START: str = "2016-01-01"
     MARKET_DATA_SYNC_CRON: str = "30 17 * * 1-5"
-    MARKET_DATA_SYMBOLS_PER_REQUEST: int = 20
+    MARKET_DATA_SYMBOLS_PER_REQUEST: int = 25
+    MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: bool = True
+    MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: int = 50
 
     # ---- Scheduler / market hours ----
     SCHEDULER_TIMEZONE: str = "America/New_York"
@@ -96,6 +98,11 @@ class Settings(BaseSettings):
 
     # ---- Logging ----
     LOG_LEVEL: str = "INFO"
+    SQL_ECHO: bool = False
+    SQLALCHEMY_LOG_LEVEL: str = "WARNING"
+
+    # ---- Session cookie ----
+    SESSION_COOKIE_SECURE: bool = False
 
     @property
     def resolved_database_url(self) -> str:

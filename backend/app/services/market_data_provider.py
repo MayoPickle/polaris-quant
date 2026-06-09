@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
+import re
 from typing import Any
 
 from app.brokers.alpaca.rate_limit import (
@@ -18,6 +20,13 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 _LIMITER = SharedRateLimiter(settings.ALPACA_DATA_RATE_LIMIT_PER_MINUTE)
+_INVALID_SYMBOL_RE = re.compile(r"invalid symbols?:\s*([A-Z0-9._/-]+)", re.IGNORECASE)
+
+
+class InvalidProviderSymbolError(ValueError):
+    def __init__(self, symbols: list[str], message: str) -> None:
+        self.symbols = symbols
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -94,10 +103,16 @@ class AlpacaMarketDataProvider:
             adjustment=Adjustment(adjustment),
             limit=10_000,
         )
-        bar_set = self._call(
-            f"bars {timeframe} {symbols[0]}..{symbols[-1]}",
-            lambda: self._data.get_stock_bars(req),
-        )
+        try:
+            bar_set = self._call(
+                f"bars {timeframe} {symbols[0]}..{symbols[-1]}",
+                lambda: self._data.get_stock_bars(req),
+            )
+        except Exception as exc:
+            invalid_symbols = invalid_symbols_from_error(exc)
+            if invalid_symbols:
+                raise InvalidProviderSymbolError(invalid_symbols, str(exc)) from exc
+            raise
         out: list[ProviderBar] = []
         for symbol, rows in bar_set.data.items():
             out.extend(_to_provider_bar(symbol, row) for row in rows)
@@ -131,6 +146,25 @@ class AlpacaMarketDataProvider:
 
 def _timeframe(value: str, time_frame):
     return getattr(time_frame, {"1Min": "Minute", "1Hour": "Hour", "1Day": "Day"}.get(value, "Day"))
+
+
+def invalid_symbols_from_error(exc: Exception) -> list[str]:
+    message = _error_message(exc)
+    match = _INVALID_SYMBOL_RE.search(message)
+    if not match:
+        return []
+    return [match.group(1).upper()]
+
+
+def _error_message(exc: Exception) -> str:
+    text = str(exc)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    if isinstance(payload, dict) and isinstance(payload.get("message"), str):
+        return payload["message"]
+    return text
 
 
 def _asset_symbol(asset: Any) -> str:

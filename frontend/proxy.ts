@@ -13,9 +13,6 @@ export function proxy(request: NextRequest) {
     PUBLIC_FILE.test(pathname) ||
     PUBLIC_PATHS.has(pathname)
   ) {
-    if (request.cookies.has(SESSION_COOKIE) && pathname === "/login") {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
     return NextResponse.next();
   }
 

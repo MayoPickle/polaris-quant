@@ -28,6 +28,7 @@ export const zhCNBase = {
       switchToEn: "切换到英文",
     },
   theme: {
+      label: "主题",
       toggle: "切换明暗模式",
     },
   nav: {
@@ -37,12 +38,21 @@ export const zhCNBase = {
       orders: "订单",
       market: "行情",
       data: "数据",
+      controlCenter: "控制中心",
     },
   shell: {
       primaryNavigation: "主导航",
-      sessionTitle: "会话",
-      sessionDescription: "经纪商数据、策略运行与账户状态按交易流程归集。",
+      sessionTitle: "市场状态",
+      sessionDescription: "当前交易时段状态。",
+      marketStatus: "市场",
       preferencesTitle: "界面偏好",
+      preferencesDescription: "当前工作区的语言与明暗模式。",
+      openControlCenter: "打开控制中心",
+      controlCenterDescription: "市场状态、界面偏好与辅助操作入口。",
+      operationsTitle: "运行与数据",
+      operationsDescription: "订单流和数据工具从这里进入。",
+      ordersDescription: "查看订单状态、成交与异常。",
+      dataDescription: "管理行情数据覆盖范围与写库任务。",
     },
   common: {
       apiOnline: "API 在线",
@@ -114,6 +124,7 @@ export const zhCNBase = {
       batchStatus: {
         queued: "排队中",
         running: "运行中",
+        cancelling: "取消中",
         pausing: "暂停中",
         paused: "已暂停",
         completed: "已完成",

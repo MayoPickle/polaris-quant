@@ -1,14 +1,15 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
-import { LanguageToggle } from "@/components/language-toggle";
+import { ControlCenter } from "@/components/control-center";
 import { Logo } from "@/components/logo";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { Sidebar } from "@/components/sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { getDictionary } from "@/lib/i18n/dictionaries";
+import { marketSessionLabel } from "@/lib/i18n/format";
 import { getServerLocale } from "@/lib/i18n/server";
 import { serverApi } from "@/lib/server-api";
+import type { MarketClock } from "@/types";
 
 export async function AppShell({
   title,
@@ -29,10 +30,21 @@ export async function AppShell({
 
   const locale = await getServerLocale();
   const t = getDictionary(locale);
+  let marketClock: MarketClock | null = null;
+  try {
+    marketClock = await serverApi.marketClock();
+  } catch {
+    marketClock = null;
+  }
+  const marketStatus = {
+    label: t.shell.marketStatus,
+    value: marketSessionLabel(marketClock?.is_open, locale),
+    isOpen: marketClock?.is_open ?? null,
+  };
 
   return (
     <div className="flex min-h-dvh flex-1 bg-background">
-      <Sidebar />
+      <Sidebar marketStatus={marketStatus} />
       <div className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="sticky top-0 z-30 border-b bg-card/95 px-4 pt-[max(env(safe-area-inset-top),0px)] shadow-[0_1px_2px_rgba(15,23,42,0.03)] backdrop-blur md:hidden">
           <div className="flex h-14 items-center justify-between gap-3">
@@ -48,8 +60,7 @@ export async function AppShell({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <LanguageToggle />
-              <ThemeToggle />
+              <ControlCenter marketStatus={marketStatus} compact />
             </div>
           </div>
         </header>
@@ -59,7 +70,7 @@ export async function AppShell({
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <h1 className="truncate text-xl font-semibold tracking-tight md:text-2xl">
-                {title}
+                  {title}
                 </h1>
                 {subtitle && (
                   <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">

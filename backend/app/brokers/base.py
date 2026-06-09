@@ -53,6 +53,24 @@ class Bar:
 
 
 @dataclass
+class MarketSnapshot:
+    symbol: str
+    latest_trade_price: float | None = None
+    latest_trade_timestamp: str | None = None
+    latest_trade_size: float | None = None
+    bid_price: float | None = None
+    ask_price: float | None = None
+    spread: float | None = None
+    midpoint_price: float | None = None
+    day_open: float | None = None
+    day_high: float | None = None
+    day_low: float | None = None
+    day_close: float | None = None
+    day_volume: float | None = None
+    previous_close: float | None = None
+
+
+@dataclass
 class OrderRequest:
     symbol: str
     side: OrderSide
@@ -94,6 +112,11 @@ class BrokerClient(ABC):
         end: datetime | None = None,
     ) -> list[Bar]:
         """Historical OHLCV bars, oldest first."""
+        ...
+
+    @abstractmethod
+    def get_market_snapshots(self, symbols: list[str]) -> list[MarketSnapshot]:
+        """Latest trade, quote, and daily summary data for symbols."""
         ...
 
     # ---- Account ----

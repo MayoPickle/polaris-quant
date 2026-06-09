@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -13,7 +13,7 @@ from app.api.v1.endpoints import market_data as market_data_endpoint
 from app.db.base_all import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.market_data import MarketAsset, MarketDataCoverage, MarketDataIngestionJob
+from app.models.market_data import MarketAsset, MarketBar, MarketDataCoverage, MarketDataIngestionJob
 
 
 def test_market_data_ingestion_job_api(monkeypatch) -> None:
@@ -112,6 +112,128 @@ def test_market_data_pause_resume_api(monkeypatch) -> None:
         _clear_overrides()
 
 
+def test_market_data_cancel_and_delete_api() -> None:
+    Session = _session_factory()
+    _install_overrides(Session)
+    client = TestClient(app)
+
+    try:
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        with Session() as db:
+            db.add(
+                MarketDataIngestionJob(
+                    id="cancel-me",
+                    kind="backfill",
+                    provider="alpaca",
+                    feed="sip",
+                    timeframe="1Day",
+                    adjustment="split",
+                    symbols=["AAPL"],
+                    start_ts=start,
+                    end_ts=start + timedelta(days=2),
+                    status="running",
+                    total_symbols=1,
+                    total_work_units=2,
+                    progress_state={},
+                )
+            )
+            db.add(
+                MarketDataIngestionJob(
+                    id="delete-me",
+                    kind="backfill",
+                    provider="alpaca",
+                    feed="sip",
+                    timeframe="1Day",
+                    adjustment="split",
+                    symbols=["MSFT"],
+                    start_ts=start,
+                    end_ts=start + timedelta(days=2),
+                    status="paused",
+                    total_symbols=1,
+                    total_work_units=2,
+                    progress_state={},
+                )
+            )
+            db.add(
+                MarketBar(
+                    provider="alpaca",
+                    feed="sip",
+                    timeframe="1Day",
+                    adjustment="split",
+                    symbol="MSFT",
+                    ts=start,
+                    open=1,
+                    high=1,
+                    low=1,
+                    close=1,
+                    volume=1,
+                    currency="USD",
+                )
+            )
+            db.commit()
+
+        cancelled = client.post("/api/v1/market-data/ingestion-jobs/cancel-me/cancel")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["status"] == "cancelling"
+        assert cancelled.json()["ended_at"] is None
+
+        delete_active = client.delete("/api/v1/market-data/ingestion-jobs/cancel-me")
+        assert delete_active.status_code == 409
+
+        with Session() as db:
+            job = db.get(MarketDataIngestionJob, "cancel-me")
+            assert job is not None
+            job.status = "cancelled"
+            job.ended_at = start + timedelta(days=1)
+            db.commit()
+
+        delete_cancelled = client.delete("/api/v1/market-data/ingestion-jobs/cancel-me")
+        assert delete_cancelled.status_code == 204
+
+        delete_paused = client.delete("/api/v1/market-data/ingestion-jobs/delete-me")
+        assert delete_paused.status_code == 204
+
+        with Session() as db:
+            assert db.get(MarketDataIngestionJob, "cancel-me") is None
+            assert db.get(MarketDataIngestionJob, "delete-me") is None
+            assert db.query(MarketBar).filter(MarketBar.symbol == "MSFT").count() == 1
+    finally:
+        _clear_overrides()
+
+
+def test_market_data_delete_rejects_active_job() -> None:
+    Session = _session_factory()
+    _install_overrides(Session)
+    client = TestClient(app)
+
+    try:
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        with Session() as db:
+            db.add(
+                MarketDataIngestionJob(
+                    id="running-job",
+                    kind="backfill",
+                    provider="alpaca",
+                    feed="sip",
+                    timeframe="1Day",
+                    adjustment="split",
+                    symbols=["AAPL"],
+                    start_ts=start,
+                    end_ts=start + timedelta(days=2),
+                    status="running",
+                    total_symbols=1,
+                    total_work_units=2,
+                    progress_state={},
+                )
+            )
+            db.commit()
+
+        response = client.delete("/api/v1/market-data/ingestion-jobs/running-job")
+        assert response.status_code == 409
+    finally:
+        _clear_overrides()
+
+
 def test_market_data_assets_refresh_and_coverage_api(monkeypatch) -> None:
     Session = _session_factory()
     _install_overrides(Session)
@@ -138,6 +260,22 @@ def test_market_data_assets_refresh_and_coverage_api(monkeypatch) -> None:
                     last_success_at=start,
                 )
             )
+            db.add(
+                MarketBar(
+                    provider="alpaca",
+                    feed="sip",
+                    timeframe="1Min",
+                    adjustment="split",
+                    symbol="AAPL",
+                    ts=start,
+                    open=1,
+                    high=1,
+                    low=1,
+                    close=1,
+                    volume=1,
+                    currency="USD",
+                )
+            )
             db.commit()
 
         refresh = client.post("/api/v1/market-data/assets/refresh")
@@ -149,10 +287,23 @@ def test_market_data_assets_refresh_and_coverage_api(monkeypatch) -> None:
         assert coverage.json()[0]["symbol"] == "AAPL"
         assert coverage.json()[0]["row_count"] == 5
 
+        statements: list[str] = []
+        engine = Session.kw["bind"]
+
+        @event.listens_for(engine, "before_cursor_execute")
+        def capture_statement(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
+            statements.append(statement)
+
         summary = client.get("/api/v1/market-data/coverage/summary")
         assert summary.status_code == 200
         assert summary.json()["symbols"] == 1
         assert summary.json()["row_count"] == 5
+        assert summary.json()["market_bar_rows"] == 5
+        assert not any("market_bars" in statement for statement in statements)
+
+        reconcile = client.post("/api/v1/market-data/coverage/reconcile?symbol=aapl&timeframe=1Min")
+        assert reconcile.status_code == 200
+        assert reconcile.json() == {"reconciled_symbols": 1, "row_count": 1}
     finally:
         _clear_overrides()
 

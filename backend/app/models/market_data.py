@@ -25,6 +25,7 @@ from app.models.mixins import TimestampMixin
 INGESTION_STATUSES = (
     "queued",
     "running",
+    "cancelling",
     "pausing",
     "paused",
     "completed",

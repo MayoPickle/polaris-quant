@@ -14,10 +14,19 @@ export type {
   BatchBacktestRequest,
   BatchBacktestSymbolResult,
 } from "./backtests";
-export type { MarketBarsResponse, MarketBarSeries, MarketClock, Quote } from "./market";
+export type {
+  MarketBar,
+  MarketBarsResponse,
+  MarketBarSeries,
+  MarketClock,
+  MarketSnapshot,
+  MarketSnapshotsResponse,
+  Quote,
+} from "./market";
 export type {
   MarketDataAssetRefresh,
   MarketDataCoverage,
+  MarketDataCoverageReconcile,
   MarketDataCoverageSummary,
   MarketDataIngestionJob,
   MarketDataIngestionJobCreate,

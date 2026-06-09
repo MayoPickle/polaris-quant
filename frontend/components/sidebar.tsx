@@ -1,17 +1,23 @@
 "use client";
 
-import { Settings2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { LanguageToggle } from "@/components/language-toggle";
+import { ControlCenter } from "@/components/control-center";
 import { Logo } from "@/components/logo";
-import { isNavItemActive, NAV_ITEMS } from "@/components/nav-items";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { isNavItemActive, PRIMARY_NAV_ITEMS } from "@/components/nav-items";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
 
-export function Sidebar() {
+export function Sidebar({
+  marketStatus,
+}: {
+  marketStatus: {
+    label: string;
+    value: string;
+    isOpen: boolean | null;
+  };
+}) {
   const pathname = usePathname();
   const { t } = useI18n();
 
@@ -29,7 +35,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="flex flex-col gap-1" aria-label={t.shell.primaryNavigation}>
-        {NAV_ITEMS.map((item) => {
+        {PRIMARY_NAV_ITEMS.map((item) => {
           const active = isNavItemActive(pathname, item.href);
           const Icon = item.icon;
 
@@ -52,23 +58,14 @@ export function Sidebar() {
         })}
       </nav>
       <div className="mt-auto rounded-lg border bg-card/55 p-3">
-        <p className="text-xs font-semibold">{t.shell.sessionTitle}</p>
+        <p className="text-xs font-semibold">{t.nav.controlCenter}</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {t.shell.sessionDescription}
+          {t.shell.controlCenterDescription}
         </p>
-        <div
-          className="mt-3 border-t pt-3"
-          aria-label={t.shell.preferencesTitle}
-        >
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-              <Settings2 className="size-3.5 shrink-0" aria-hidden="true" />
-              <span className="truncate">{t.shell.preferencesTitle}</span>
-            </span>
-            <ThemeToggle variant="ghost" size="icon-xs" />
-          </div>
-          <LanguageToggle className="w-full" itemClassName="flex-1" />
-        </div>
+        <ControlCenter
+          marketStatus={marketStatus}
+          className="mt-3 w-full justify-start"
+        />
       </div>
     </aside>
   );

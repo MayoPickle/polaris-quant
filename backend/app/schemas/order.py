@@ -64,6 +64,27 @@ class MarketBarsRead(BaseModel):
     series: list[MarketBarSeriesRead]
 
 
+class MarketSnapshotRead(BaseModel):
+    symbol: str
+    latest_trade_price: float | None = None
+    latest_trade_timestamp: str | None = None
+    latest_trade_size: float | None = None
+    bid_price: float | None = None
+    ask_price: float | None = None
+    spread: float | None = None
+    midpoint_price: float | None = None
+    day_open: float | None = None
+    day_high: float | None = None
+    day_low: float | None = None
+    day_close: float | None = None
+    day_volume: float | None = None
+    previous_close: float | None = None
+
+
+class MarketSnapshotsRead(BaseModel):
+    snapshots: list[MarketSnapshotRead]
+
+
 class AccountRead(BaseModel):
     cash: float
     equity: float

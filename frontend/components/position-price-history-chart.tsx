@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { chartTooltipProps } from "@/components/chart-tooltip";
 import { EmptyState } from "@/components/workbench";
 import { useI18n } from "@/lib/i18n/client";
 import { formatCurrency } from "@/lib/i18n/format";
@@ -77,6 +78,7 @@ export function PositionPriceHistoryChart({
             fontSize={12}
           />
           <Tooltip
+            {...chartTooltipProps}
             formatter={(value, name) => [
               formatCurrency(Number(value ?? 0), locale, {
                 maximumFractionDigits: Number(value ?? 0) >= 1000 ? 0 : 2,

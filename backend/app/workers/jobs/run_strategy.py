@@ -59,6 +59,15 @@ def run_strategy_instance(db: Session, instance_id: int, broker: BrokerClient | 
     db.commit()
 
     if not broker.is_market_open():
+        for symbol in instance.symbols:
+            _record_signal_audit(
+                db,
+                instance=instance,
+                symbol=symbol,
+                side="hold",
+                status="skipped",
+                reason="market_closed",
+            )
         logger.info("Market closed; skipping strategy %s", instance_id)
         return
 
@@ -74,15 +83,59 @@ def run_strategy_instance(db: Session, instance_id: int, broker: BrokerClient | 
         logger.exception("Strategy %s failed before signal execution", instance_id)
         return
 
+    if not signals:
+        for symbol in instance.symbols:
+            _record_signal_audit(
+                db,
+                instance=instance,
+                symbol=symbol,
+                side="hold",
+                status="no_signal",
+                reason="strategy returned no actionable signal",
+            )
+        return
+
     for sig in signals:
         if sig.side == "hold":
+            _record_signal_audit(
+                db,
+                instance=instance,
+                symbol=sig.symbol,
+                side="hold",
+                qty=sig.qty,
+                status="no_signal",
+                reason="strategy returned hold",
+                strategy_meta=sig.meta,
+            )
             continue
         symbol_bars = bars.get(sig.symbol, [])
         if not symbol_bars:
+            _record_signal_audit(
+                db,
+                instance=instance,
+                symbol=sig.symbol,
+                side=sig.side,
+                qty=sig.qty,
+                status="skipped",
+                reason="no market bars available",
+                strategy_meta=sig.meta,
+            )
             continue
         latest_bar = symbol_bars[-1]
         signal_key = f"{instance.id}:{sig.symbol}:{sig.side}:{latest_bar.timestamp}"
         if _already_processed(db, instance.id, sig.symbol, sig.side, signal_key):
+            _record_signal_audit(
+                db,
+                instance=instance,
+                symbol=sig.symbol,
+                side=sig.side,
+                qty=sig.qty,
+                status="skipped",
+                reason="duplicate signal",
+                strategy_meta=sig.meta,
+                signal_key=signal_key,
+                bar_timestamp=latest_bar.timestamp,
+            )
             logger.info("Duplicate signal skipped: %s", signal_key)
             continue
 
@@ -120,11 +173,16 @@ def run_strategy_instance(db: Session, instance_id: int, broker: BrokerClient | 
 
         request = OrderRequest(symbol=sig.symbol, side=sig.side, qty=qty)
         try:
-            place_order(
+            order = place_order(
                 db, broker, user_id=instance.user_id, request=request,
                 strategy_instance_id=instance.id,
             )
-            audit.meta = {**audit.meta, "status": "submitted"}
+            audit.meta = {
+                **audit.meta,
+                "status": "submitted",
+                "order_id": order.id,
+                "broker_order_id": order.broker_order_id,
+            }
             db.commit()
         except OrderRejected as exc:
             audit.meta = {**audit.meta, "status": "rejected", "reason": str(exc)}
@@ -151,6 +209,41 @@ def _already_processed(
         .all()
     )
     return any((row.meta or {}).get("signal_key") == signal_key for row in rows)
+
+
+def _record_signal_audit(
+    db: Session,
+    *,
+    instance: StrategyInstance,
+    symbol: str,
+    side: str,
+    status: str,
+    reason: str,
+    qty: float = 0.0,
+    strategy_meta: dict | None = None,
+    signal_key: str | None = None,
+    bar_timestamp: str | None = None,
+) -> SignalModel:
+    meta = {
+        "status": status,
+        "reason": reason,
+        "strategy_meta": strategy_meta or {},
+    }
+    if signal_key:
+        meta["signal_key"] = signal_key
+    if bar_timestamp:
+        meta["bar_timestamp"] = bar_timestamp
+    audit = SignalModel(
+        strategy_instance_id=instance.id,
+        symbol=symbol,
+        side=side,
+        qty=qty,
+        meta=meta,
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(audit)
+    return audit
 
 
 def _qty_for_signal(

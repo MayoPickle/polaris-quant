@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { chartTooltipProps } from "@/components/chart-tooltip";
 import { useI18n } from "@/lib/i18n/client";
 import { formatCurrency } from "@/lib/i18n/format";
 import type { BacktestResult } from "@/types";
@@ -53,6 +54,7 @@ export function CompareResultsChart({
             fontSize={12}
           />
           <Tooltip
+            {...chartTooltipProps}
             formatter={(value) =>
               typeof value === "number" ? usd(value) : String(value ?? "")
             }
@@ -77,4 +79,3 @@ export function CompareResultsChart({
     </div>
   );
 }
-

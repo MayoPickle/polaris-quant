@@ -77,6 +77,7 @@ class OrderRequest:
     qty: float
     order_type: OrderType = "market"
     limit_price: float | None = None
+    extended_hours: bool = False
     client_order_id: str | None = None
 
 

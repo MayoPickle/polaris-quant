@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Badge } from "@/components/ui/badge";
 import { EmptyState, WorkbenchPanel } from "@/components/workbench";
 import { formatDateTime } from "@/lib/i18n/format";
@@ -22,13 +24,21 @@ export function AutomationPanel({
       title={t.pages.overview.automationTitle}
       description={`${activeStrategies.length} ${t.common.active} · ${strategyRows.length} ${t.common.configured}`}
       actions={
-        <Badge variant={erroredStrategies.length > 0 ? "destructive" : activeStrategies.length > 0 ? "default" : "outline"}>
-          {erroredStrategies.length > 0
-            ? t.enums.automationState.errors
-            : activeStrategies.length > 0
-              ? t.enums.automationState.active
-              : t.enums.automationState.idle}
-        </Badge>
+        <>
+          <Badge variant={erroredStrategies.length > 0 ? "destructive" : activeStrategies.length > 0 ? "default" : "outline"}>
+            {erroredStrategies.length > 0
+              ? t.enums.automationState.errors
+              : activeStrategies.length > 0
+                ? t.enums.automationState.active
+                : t.enums.automationState.idle}
+          </Badge>
+          <Link
+            href="/automation"
+            className="inline-flex h-7 items-center rounded-lg border px-2.5 text-[0.8rem] font-medium hover:bg-muted"
+          >
+            {t.nav.automation}
+          </Link>
+        </>
       }
       className="self-start"
       contentClassName="flex flex-col gap-2"
@@ -66,4 +76,3 @@ export function AutomationPanel({
     </WorkbenchPanel>
   );
 }
-

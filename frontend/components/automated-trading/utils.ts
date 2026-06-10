@@ -2,7 +2,7 @@ import type { StrategyDescriptor } from "@/types";
 
 import type { ParamSpec } from "./types";
 
-export const HOURLY_SCHEDULE = "55 10-15 * * 1-5";
+export const HOURLY_SCHEDULE = "55 10-15 * * mon-fri";
 
 export function paramsFor(strategy?: StrategyDescriptor): Record<string, number> {
   const props = (strategy?.param_schema?.properties as Record<string, ParamSpec>) ?? {};
@@ -23,4 +23,3 @@ export function parseSymbols(value: string): string[] {
     )
   );
 }
-

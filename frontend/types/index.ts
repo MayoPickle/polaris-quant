@@ -33,11 +33,12 @@ export type {
   MarketDataIngestionKind,
   MarketDataIngestionStatus,
 } from "./market-data";
-export type { Order, OrderCreate } from "./orders";
+export type { Order, OrderCreate, OrderSide, OrderSource, OrderType } from "./orders";
 export type { PositionSizingConfig, PositionSizingMethod } from "./position-sizing";
 export type {
   StrategyDescriptor,
   StrategyInstance,
   StrategyInstanceCreate,
   StrategyInstanceUpdate,
+  StrategySignal,
 } from "./strategies";

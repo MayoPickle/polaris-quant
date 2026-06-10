@@ -1,5 +1,4 @@
 import { AppShell } from "@/components/app-shell";
-import { AutomatedTrading } from "@/components/automated-trading";
 import { BacktestCompare } from "@/components/backtest-compare";
 import { BatchBacktest } from "@/components/batch-backtest";
 import { StrategyCatalog } from "@/components/strategy-catalog";
@@ -11,10 +10,8 @@ import { serverApi as api } from "@/lib/server-api";
 export default async function StrategiesPage() {
   const locale = await getServerLocale();
   const t = getDictionary(locale);
-  const [health, available, instances, universes] = await Promise.all([
-    safe(api.health()),
+  const [available, universes] = await Promise.all([
     safe(api.availableStrategies(locale)),
-    safe(api.listStrategies()),
     safe(api.backtestUniverses(locale)),
   ]);
 
@@ -23,12 +20,6 @@ export default async function StrategiesPage() {
       title={t.pages.strategies.title}
       subtitle={t.pages.strategies.subtitle}
     >
-      <AutomatedTrading
-        strategies={available ?? []}
-        instances={instances ?? []}
-        health={health}
-      />
-
       <StrategyCatalog strategies={available ?? []} />
 
       <BatchBacktest strategies={available ?? []} universes={universes ?? []} />

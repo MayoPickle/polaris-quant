@@ -56,10 +56,10 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
         ],
       },
       {
-        name: t.nav.strategies,
-        short_name: t.nav.strategies,
-        description: t.manifest.shortcuts.strategies,
-        url: "/strategies",
+        name: t.nav.automation,
+        short_name: t.nav.automation,
+        description: t.manifest.shortcuts.automation,
+        url: "/automation",
         icons: [
           {
             src: "/icons/shortcut-strategies-96.png",
@@ -82,10 +82,10 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
         ],
       },
       {
-        name: t.nav.orders,
-        short_name: t.nav.orders,
-        description: t.manifest.shortcuts.orders,
-        url: "/orders",
+        name: t.nav.history,
+        short_name: t.nav.history,
+        description: t.manifest.shortcuts.history,
+        url: "/history",
         icons: [
           {
             src: "/icons/shortcut-orders-96.png",

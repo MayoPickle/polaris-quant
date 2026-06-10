@@ -15,6 +15,10 @@ export interface StrategyInstance {
   is_active: boolean;
   last_run_at: string | null;
   last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+  next_run_at: string | null;
 }
 
 export interface StrategyInstanceCreate {
@@ -36,3 +40,21 @@ export interface StrategyInstanceUpdate {
   live_confirmed?: boolean;
 }
 
+export interface StrategySignal {
+  id: number;
+  strategy_instance_id: number;
+  strategy_name: string;
+  strategy_key: string;
+  symbol: string;
+  side: "buy" | "sell" | "hold";
+  qty: number;
+  status: string;
+  reason: string | null;
+  allocation_pct: number | null;
+  allocation_source: string | null;
+  allocation_rationale: string | null;
+  bar_timestamp: string | null;
+  order_id: number | null;
+  broker_order_id: string | null;
+  created_at: string;
+}

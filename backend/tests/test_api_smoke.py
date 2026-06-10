@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from fastapi.testclient import TestClient
 
 from app.brokers.base import MarketSnapshot
@@ -86,14 +88,75 @@ def test_market_bars_returns_normalized_series() -> None:
     assert payload["series"][0]["bars"][0]["close"] == 101
 
 
+def test_market_bars_auto_selects_minute_for_one_day_date_range() -> None:
+    broker = FakeMarketBroker()
+    day = date.today() - timedelta(days=1)
+    with auth_override(), broker_override(broker):
+        resp = client.get(
+            "/api/v1/market/bars"
+            f"?symbols=AAPL&start_date={day.isoformat()}&end_date={day.isoformat()}"
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["timeframe"] == "1Min"
+    assert payload["lookback_days"] == 1
+    assert payload["start_date"] == day.isoformat()
+    assert payload["end_date"] == day.isoformat()
+    assert broker.calls[0]["timeframe"] == "1Min"
+
+
+def test_market_bars_auto_selects_hourly_for_one_week_date_range() -> None:
+    broker = FakeMarketBroker()
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=6)
+    with auth_override(), broker_override(broker):
+        resp = client.get(
+            "/api/v1/market/bars"
+            f"?symbols=AAPL&start_date={start.isoformat()}&end_date={end.isoformat()}"
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["timeframe"] == "1Hour"
+    assert payload["lookback_days"] == 7
+    assert payload["start_date"] == start.isoformat()
+    assert payload["end_date"] == end.isoformat()
+    assert broker.calls[0]["timeframe"] == "1Hour"
+
+
+def test_market_bars_auto_selects_daily_for_long_date_range() -> None:
+    broker = FakeMarketBroker()
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=365 * 5)
+    with auth_override(), broker_override(broker):
+        resp = client.get(
+            "/api/v1/market/bars"
+            f"?symbols=AAPL&start_date={start.isoformat()}&end_date={end.isoformat()}"
+        )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["timeframe"] == "1Day"
+    assert payload["lookback_days"] == (end - start).days + 1
+    assert broker.calls[0]["timeframe"] == "1Day"
+
+
 def test_market_bars_rejects_invalid_inputs() -> None:
     broker = FakeMarketBroker()
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=1)
     with auth_override(), broker_override(broker):
         invalid_symbol = client.get("/api/v1/market/bars?symbols=AAPL,$BAD")
         invalid_lookback = client.get("/api/v1/market/bars?symbols=AAPL&lookback_days=366")
+        invalid_date_order = client.get(
+            "/api/v1/market/bars"
+            f"?symbols=AAPL&start_date={end.isoformat()}&end_date={start.isoformat()}"
+        )
 
     assert invalid_symbol.status_code == 422
     assert invalid_lookback.status_code == 422
+    assert invalid_date_order.status_code == 422
     assert broker.calls == []
 
 

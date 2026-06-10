@@ -28,12 +28,13 @@ class StrategyInstance(Base, TimestampMixin):
     params: Mapped[dict] = mapped_column(JSON, default=dict)
     # Symbols this instance trades, e.g. ["AAPL", "MSFT"].
     symbols: Mapped[list] = mapped_column(JSON, default=list)
-    # Cron-like schedule expression handled by the worker, e.g. "*/15 9-16 * * 1-5".
+    # Cron-like schedule expression handled by the worker, e.g. "*/15 9-16 * * mon-fri".
     schedule: Mapped[str] = mapped_column(String(120), default="")
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Signal(Base, TimestampMixin):

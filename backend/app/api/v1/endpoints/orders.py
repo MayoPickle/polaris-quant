@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_broker_client, get_current_user_id
@@ -10,7 +10,13 @@ from app.brokers.base import BrokerClient, OrderRequest
 from app.db.session import get_db
 from app.models.order import Order
 from app.schemas.order import OrderCreate, OrderRead
-from app.services.order_service import OrderRejected, place_order
+from app.services.order_service import (
+    OrderCancelFailed,
+    OrderCancelRejected,
+    OrderRejected,
+    cancel_order as cancel_order_service,
+    place_order,
+)
 
 router = APIRouter()
 
@@ -41,9 +47,29 @@ def create_order(
         qty=payload.qty,
         order_type=payload.order_type,
         limit_price=payload.limit_price,
+        extended_hours=payload.extended_hours,
     )
     try:
         return place_order(db, broker, user_id=user_id, request=request)
     except OrderRejected as exc:
         # 422: well-formed request, but risk rules blocked it.
         raise HTTPException(422, str(exc))
+
+
+@router.post("/{order_id}/cancel", response_model=OrderRead)
+def cancel_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+    broker: BrokerClient = Depends(get_broker_client),
+) -> Order:
+    order = db.query(Order).filter(Order.id == order_id, Order.user_id == user_id).one_or_none()
+    if order is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Order not found.")
+
+    try:
+        return cancel_order_service(db, broker, order=order)
+    except OrderCancelRejected as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
+    except OrderCancelFailed as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Broker cancel failed: {exc}")

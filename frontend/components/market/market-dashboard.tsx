@@ -28,6 +28,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { chartTooltipProps } from "@/components/chart-tooltip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -863,13 +864,7 @@ function PriceChart({
           />
           <YAxis yAxisId="volume" orientation="right" hide />
           <Tooltip
-            contentStyle={{
-              background: CHART_COLORS.surface,
-              border: `1px solid ${CHART_COLORS.grid}`,
-              borderRadius: 8,
-              color: CHART_COLORS.text,
-            }}
-            labelStyle={{ color: CHART_COLORS.muted }}
+            {...chartTooltipProps}
             formatter={(value, name) => {
               const numeric = Number(value ?? 0);
               if (name === "volume") {

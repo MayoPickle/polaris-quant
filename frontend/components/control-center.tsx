@@ -167,10 +167,7 @@ function OperationLinkCard({
 }) {
   const { t } = useI18n();
   const Icon = item.icon;
-  const description =
-    item.labelKey === "orders"
-      ? t.shell.ordersDescription
-      : t.shell.dataDescription;
+  const description = operationDescription(item.labelKey, t.shell);
 
   return (
     <Link
@@ -197,4 +194,17 @@ function OperationLinkCard({
       />
     </Link>
   );
+}
+
+function operationDescription(
+  labelKey: NavItem["labelKey"],
+  labels: {
+    historyDescription: string;
+    dataDescription: string;
+    analysisDescription: string;
+  }
+) {
+  if (labelKey === "history") return labels.historyDescription;
+  if (labelKey === "analysis") return labels.analysisDescription;
+  return labels.dataDescription;
 }

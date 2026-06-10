@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import math
 from typing import Literal
 
@@ -24,6 +24,9 @@ router = APIRouter()
 
 _SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _MAX_SNAPSHOT_SYMBOLS = 20
+_DELAYED_DATA_MINUTES = 20
+_MINUTE_RANGE_DAYS = 1
+_HOURLY_RANGE_DAYS = 7
 
 
 @router.get("/clock")
@@ -45,17 +48,26 @@ def get_quote(symbol: str, broker: BrokerClient = Depends(get_broker_client)) ->
 @router.get("/bars", response_model=MarketBarsRead)
 def get_bars(
     symbols: str = Query(..., min_length=1),
-    timeframe: Literal["1Min", "1Hour", "1Day"] = "1Day",
+    timeframe: Literal["1Min", "1Hour", "1Day"] | None = None,
     lookback_days: int = Query(90, ge=1, le=365),
+    start_date: date | None = None,
+    end_date: date | None = None,
     broker: BrokerClient = Depends(get_broker_client),
 ) -> MarketBarsRead:
     normalized = _normalize_symbols(symbols)
-    start, end = _bars_window(lookback_days)
+    start, end, window_days = _bars_window_for_request(
+        lookback_days=lookback_days,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    resolved_timeframe = timeframe or (
+        _auto_timeframe(window_days) if start_date and end_date else "1Day"
+    )
     series: list[MarketBarSeriesRead] = []
 
     for symbol in normalized:
         try:
-            bars = broker.get_bars(symbol, timeframe=timeframe, start=start, end=end)
+            bars = broker.get_bars(symbol, timeframe=resolved_timeframe, start=start, end=end)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(502, f"Could not fetch market data for {symbol}: {exc}") from exc
         series.append(
@@ -65,7 +77,13 @@ def get_bars(
             )
         )
 
-    return MarketBarsRead(timeframe=timeframe, lookback_days=lookback_days, series=series)
+    return MarketBarsRead(
+        timeframe=resolved_timeframe,
+        lookback_days=window_days,
+        start_date=start.date().isoformat(),
+        end_date=(end_date.isoformat() if end_date else end.date().isoformat()),
+        series=series,
+    )
 
 
 @router.get("/snapshots", response_model=MarketSnapshotsRead)
@@ -107,8 +125,48 @@ def _normalize_symbols(symbols: str) -> list[str]:
 
 def _bars_window(lookback_days: int) -> tuple[datetime, datetime]:
     # Free data feed: skip the most recent bars to avoid the SIP delay window.
-    end = datetime.now(timezone.utc) - timedelta(minutes=20)
+    end = datetime.now(timezone.utc) - timedelta(minutes=_DELAYED_DATA_MINUTES)
     return end - timedelta(days=lookback_days), end
+
+
+def _bars_window_for_request(
+    *,
+    lookback_days: int,
+    start_date: date | None,
+    end_date: date | None,
+) -> tuple[datetime, datetime, int]:
+    if start_date is None and end_date is None:
+        start, end = _bars_window(lookback_days)
+        return start, end, lookback_days
+
+    if start_date is None or end_date is None:
+        raise HTTPException(422, "Both start_date and end_date are required.")
+    if start_date > end_date:
+        raise HTTPException(422, "start_date must be on or before end_date.")
+
+    delayed_now = datetime.now(timezone.utc) - timedelta(minutes=_DELAYED_DATA_MINUTES)
+    if end_date > delayed_now.date():
+        raise HTTPException(422, "end_date cannot be in the future.")
+
+    start = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+    requested_end = datetime.combine(
+        end_date + timedelta(days=1),
+        time.min,
+        tzinfo=timezone.utc,
+    )
+    end = min(requested_end, delayed_now)
+    if start >= end:
+        raise HTTPException(422, "Date range does not contain available market time.")
+
+    return start, end, (end_date - start_date).days + 1
+
+
+def _auto_timeframe(window_days: int) -> Literal["1Min", "1Hour", "1Day"]:
+    if window_days <= _MINUTE_RANGE_DAYS:
+        return "1Min"
+    if window_days <= _HOURLY_RANGE_DAYS:
+        return "1Hour"
+    return "1Day"
 
 
 def _snapshot_read(snapshot: MarketSnapshot) -> MarketSnapshotRead:

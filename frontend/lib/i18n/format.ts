@@ -47,6 +47,16 @@ export function orderStatusLabel(status: string, locale: Locale) {
   return labels[status] ?? humanize(status);
 }
 
+export function orderSourceLabel(source: string, locale: Locale) {
+  const labels = getDictionary(locale).enums.orderSource as Record<string, string>;
+  return labels[source] ?? humanize(source);
+}
+
+export function orderSessionLabel(extendedHours: boolean, locale: Locale) {
+  const labels = getDictionary(locale).common;
+  return extendedHours ? labels.extendedHours : labels.regular;
+}
+
 export function batchStatusLabel(status: string | null | undefined, locale: Locale) {
   const labels = getDictionary(locale).enums.batchStatus as Record<string, string>;
   return labels[status ?? "idle"] ?? humanize(status ?? "idle");

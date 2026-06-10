@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { chartTooltipProps } from "@/components/chart-tooltip";
 import { useI18n } from "@/lib/i18n/client";
 import { formatCurrency } from "@/lib/i18n/format";
 import type { BatchBacktestReport } from "@/types";
@@ -59,6 +60,7 @@ export function BatchReportCharts({ report }: { report: BatchBacktestReport }) {
                   fontSize={12}
                 />
                 <Tooltip
+                  {...chartTooltipProps}
                   formatter={(value) => [
                     usd(Number(value ?? 0)),
                     t.batchBacktest.equity,
@@ -100,7 +102,7 @@ export function BatchReportCharts({ report }: { report: BatchBacktestReport }) {
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="range" fontSize={11} minTickGap={16} />
                 <YAxis allowDecimals={false} fontSize={12} width={36} />
-                <Tooltip />
+                <Tooltip {...chartTooltipProps} />
                 <Bar dataKey="count" name={t.batchBacktest.symbols} fill="var(--color-primary)" radius={4} />
               </BarChart>
             </ResponsiveContainer>
@@ -112,4 +114,3 @@ export function BatchReportCharts({ report }: { report: BatchBacktestReport }) {
     </div>
   );
 }
-

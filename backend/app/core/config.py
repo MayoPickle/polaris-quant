@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     MARKET_DATA_DEFAULT_TIMEFRAME: Literal["1Min", "1Hour", "1Day"] = "1Min"
     MARKET_DATA_DEFAULT_ADJUSTMENT: str = "split"
     MARKET_DATA_BACKFILL_START: str = "2016-01-01"
-    MARKET_DATA_SYNC_CRON: str = "30 17 * * 1-5"
+    MARKET_DATA_SYNC_CRON: str = "30 17 * * mon-fri"
     MARKET_DATA_SYMBOLS_PER_REQUEST: int = 25
     MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: bool = True
     MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: int = 50
@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     MARKET_TIMEZONE: str = "America/New_York"
 
     # ---- Automated strategy trading ----
-    DEFAULT_STRATEGY_SCHEDULE: str = "55 10-15 * * 1-5"
+    DEFAULT_STRATEGY_SCHEDULE: str = "55 10-15 * * mon-fri"
     STRATEGY_TIMEFRAME: Literal["1Hour"] = "1Hour"
     STRATEGY_LOOKBACK_DAYS: int = 30
     STRATEGY_DATA_DELAY_MINUTES: int = 20
@@ -92,8 +92,8 @@ class Settings(BaseSettings):
 
     # ---- Risk controls ----
     TRADING_ENABLED: bool = False
-    MAX_POSITION_SIZE_USD: float = 1000.0
-    MAX_ORDER_SIZE_USD: float = 500.0
+    MAX_POSITION_SIZE_USD: float = 100000.0
+    MAX_ORDER_SIZE_USD: float = 100000.0
     MAX_DAILY_LOSS_USD: float = 200.0
 
     # ---- Logging ----

@@ -32,6 +32,7 @@ import type {
   StrategyInstance,
   StrategyInstanceCreate,
   StrategyInstanceUpdate,
+  StrategySignal,
 } from "@/types";
 import type { Locale } from "@/lib/i18n/config";
 
@@ -121,7 +122,17 @@ export function createApiClient(headerProvider?: HeaderProvider) {
     // Strategies
     availableStrategies: (locale?: Locale) =>
       request<StrategyDescriptor[]>("/strategies/available", undefined, locale, headerProvider),
-    listStrategies: () => request<StrategyInstance[]>("/strategies", undefined, undefined, headerProvider),
+    listStrategies: (options: { includeArchived?: boolean } = {}) => {
+      const params = new URLSearchParams();
+      if (options.includeArchived) params.set("include_archived", "true");
+      const query = params.toString();
+      return request<StrategyInstance[]>(
+        `/strategies${query ? `?${query}` : ""}`,
+        undefined,
+        undefined,
+        headerProvider
+      );
+    },
     createStrategy: (body: StrategyInstanceCreate) =>
       request<StrategyInstance>("/strategies", {
         method: "POST",
@@ -132,6 +143,26 @@ export function createApiClient(headerProvider?: HeaderProvider) {
         method: "PATCH",
         body: JSON.stringify(body),
       }, undefined, headerProvider),
+    archiveStrategy: (id: number) =>
+      request<StrategyInstance>(`/strategies/${id}`, {
+        method: "DELETE",
+      }, undefined, headerProvider),
+    strategySignals: (
+      options: { strategyInstanceId?: number; limit?: number } = {}
+    ) => {
+      const params = new URLSearchParams();
+      if (options.strategyInstanceId) {
+        params.set("strategy_instance_id", String(options.strategyInstanceId));
+      }
+      if (options.limit) params.set("limit", String(options.limit));
+      const query = params.toString();
+      return request<StrategySignal[]>(
+        `/strategies/signals${query ? `?${query}` : ""}`,
+        undefined,
+        undefined,
+        headerProvider
+      );
+    },
     backtest: (body: BacktestRequest) =>
       request<BacktestResult>("/strategies/backtest", {
         method: "POST",
@@ -164,6 +195,8 @@ export function createApiClient(headerProvider?: HeaderProvider) {
     listOrders: () => request<Order[]>("/orders", undefined, undefined, headerProvider),
     createOrder: (body: OrderCreate) =>
       request<Order>("/orders", { method: "POST", body: JSON.stringify(body) }, undefined, headerProvider),
+    cancelOrder: (orderId: number) =>
+      request<Order>(`/orders/${orderId}/cancel`, { method: "POST" }, undefined, headerProvider),
 
     // Portfolio & market
     listPositions: () => request<Position[]>("/positions", undefined, undefined, headerProvider),
@@ -171,13 +204,27 @@ export function createApiClient(headerProvider?: HeaderProvider) {
     quote: (symbol: string) => request<Quote>(`/market/quote/${symbol}`, undefined, undefined, headerProvider),
     marketBars: (
       symbols: string[],
-      options: { timeframe?: string; lookback_days?: number } = {}
+      options: {
+        timeframe?: string;
+        lookback_days?: number;
+        start_date?: string;
+        end_date?: string;
+      } = {}
     ) => {
-      const params = new URLSearchParams({
-        symbols: symbols.join(","),
-        timeframe: options.timeframe ?? "1Day",
-        lookback_days: String(options.lookback_days ?? 90),
-      });
+      const params = new URLSearchParams({ symbols: symbols.join(",") });
+      const hasDateRange = Boolean(options.start_date || options.end_date);
+      if (options.timeframe) {
+        params.set("timeframe", options.timeframe);
+      } else if (!hasDateRange) {
+        params.set("timeframe", "1Day");
+      }
+      if (options.lookback_days != null) {
+        params.set("lookback_days", String(options.lookback_days));
+      } else if (!hasDateRange) {
+        params.set("lookback_days", "90");
+      }
+      if (options.start_date) params.set("start_date", options.start_date);
+      if (options.end_date) params.set("end_date", options.end_date);
       return request<MarketBarsResponse>(`/market/bars?${params}`, undefined, undefined, headerProvider);
     },
     marketSnapshots: (symbols: string[]) => {

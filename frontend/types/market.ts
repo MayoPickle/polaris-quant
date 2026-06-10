@@ -22,6 +22,8 @@ export interface MarketBarSeries {
 export interface MarketBarsResponse {
   timeframe: string;
   lookback_days: number;
+  start_date?: string | null;
+  end_date?: string | null;
   series: MarketBarSeries[];
 }
 

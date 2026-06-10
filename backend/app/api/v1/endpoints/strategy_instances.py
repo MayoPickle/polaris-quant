@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_id
 from app.core.config import settings
 from app.db.session import get_db
+from app.models.strategy import Signal as SignalModel
 from app.models.strategy import StrategyInstance
 from app.schemas.strategy import (
     StrategyInstanceCreate,
     StrategyInstanceRead,
     StrategyInstanceUpdate,
+    StrategySignalRead,
 )
 from app.strategies import registry
 
@@ -22,10 +26,14 @@ router = APIRouter()
 
 @router.get("", response_model=list[StrategyInstanceRead])
 def list_instances(
+    include_archived: bool = False,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ) -> list[StrategyInstance]:
-    return db.query(StrategyInstance).filter(StrategyInstance.user_id == user_id).all()
+    query = db.query(StrategyInstance).filter(StrategyInstance.user_id == user_id)
+    if not include_archived:
+        query = query.filter(StrategyInstance.archived_at.is_(None))
+    return query.order_by(StrategyInstance.created_at.desc(), StrategyInstance.id.desc()).all()
 
 
 @router.post("", response_model=StrategyInstanceRead, status_code=201)
@@ -54,6 +62,29 @@ def create_instance(
     return instance
 
 
+@router.get("/signals", response_model=list[StrategySignalRead])
+def list_signals(
+    strategy_instance_id: int | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+) -> list[StrategySignalRead]:
+    query = (
+        db.query(SignalModel, StrategyInstance)
+        .join(StrategyInstance, SignalModel.strategy_instance_id == StrategyInstance.id)
+        .filter(StrategyInstance.user_id == user_id)
+    )
+    if strategy_instance_id is not None:
+        query = query.filter(SignalModel.strategy_instance_id == strategy_instance_id)
+
+    rows = (
+        query.order_by(SignalModel.created_at.desc(), SignalModel.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [_signal_read(signal, instance) for signal, instance in rows]
+
+
 @router.patch("/{instance_id}", response_model=StrategyInstanceRead)
 def update_instance(
     instance_id: int,
@@ -62,6 +93,8 @@ def update_instance(
     user_id: int = Depends(get_current_user_id),
 ) -> StrategyInstance:
     instance = _get_instance(db, user_id, instance_id)
+    if instance.archived_at is not None:
+        raise HTTPException(409, "Archived strategy cannot be modified.")
     next_strategy_key = instance.strategy_key
     next_symbols = payload.symbols if payload.symbols is not None else instance.symbols
     next_schedule = payload.schedule if payload.schedule is not None else instance.schedule
@@ -92,6 +125,22 @@ def update_instance(
 
     db.commit()
     db.refresh(instance)
+    return instance
+
+
+@router.delete("/{instance_id}", response_model=StrategyInstanceRead)
+def archive_instance(
+    instance_id: int,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+) -> StrategyInstance:
+    instance = _get_instance(db, user_id, instance_id)
+    if instance.is_active:
+        raise HTTPException(409, "Active strategies must be paused before archiving.")
+    if instance.archived_at is None:
+        instance.archived_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(instance)
     return instance
 
 
@@ -134,3 +183,48 @@ def _get_instance(db: Session, user_id: int, instance_id: int) -> StrategyInstan
         raise HTTPException(404, "Strategy instance not found.")
     return instance
 
+
+def _signal_read(signal: SignalModel, instance: StrategyInstance) -> StrategySignalRead:
+    meta = signal.meta or {}
+    return StrategySignalRead(
+        id=signal.id,
+        strategy_instance_id=signal.strategy_instance_id,
+        strategy_name=instance.name,
+        strategy_key=instance.strategy_key,
+        symbol=signal.symbol,
+        side=signal.side,
+        qty=signal.qty,
+        status=str(meta.get("status") or "unknown"),
+        reason=_optional_str(meta.get("reason")),
+        allocation_pct=_optional_float(meta.get("allocation_pct")),
+        allocation_source=_optional_str(meta.get("allocation_source")),
+        allocation_rationale=_optional_str(meta.get("allocation_rationale")),
+        bar_timestamp=_optional_str(meta.get("bar_timestamp")),
+        order_id=_optional_int(meta.get("order_id")),
+        broker_order_id=_optional_str(meta.get("broker_order_id")),
+        created_at=signal.created_at,
+    )
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

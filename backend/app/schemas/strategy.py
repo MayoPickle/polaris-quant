@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from apscheduler.triggers.cron import CronTrigger
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+
+from app.core.config import settings
 
 
 class StrategyDescriptor(BaseModel):
@@ -49,6 +53,40 @@ class StrategyInstanceRead(BaseModel):
     is_active: bool
     last_run_at: datetime | None = None
     last_error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    archived_at: datetime | None = None
+
+    @computed_field
+    @property
+    def next_run_at(self) -> datetime | None:
+        if not self.is_active or self.archived_at is not None or not self.schedule:
+            return None
+        try:
+            timezone = ZoneInfo(settings.SCHEDULER_TIMEZONE)
+            trigger = CronTrigger.from_crontab(self.schedule, timezone=timezone)
+            return trigger.get_next_fire_time(None, datetime.now(timezone))
+        except Exception:  # noqa: BLE001 - invalid stored cron should not break reads.
+            return None
+
+
+class StrategySignalRead(BaseModel):
+    id: int
+    strategy_instance_id: int
+    strategy_name: str
+    strategy_key: str
+    symbol: str
+    side: Literal["buy", "sell", "hold"]
+    qty: float
+    status: str
+    reason: str | None = None
+    allocation_pct: float | None = None
+    allocation_source: str | None = None
+    allocation_rationale: str | None = None
+    bar_timestamp: str | None = None
+    order_id: int | None = None
+    broker_order_id: str | None = None
+    created_at: datetime
 
 
 PositionSizingMethod = Literal[

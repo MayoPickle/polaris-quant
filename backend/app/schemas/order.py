@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 
 class OrderCreate(BaseModel):
@@ -13,6 +14,17 @@ class OrderCreate(BaseModel):
     qty: float = Field(gt=0)
     order_type: Literal["market", "limit", "stop", "stop_limit"] = "market"
     limit_price: float | None = None
+    extended_hours: bool = False
+
+    @model_validator(mode="after")
+    def validate_extended_hours(self) -> "OrderCreate":
+        if self.order_type == "limit" and (
+            self.limit_price is None or self.limit_price <= 0
+        ):
+            raise ValueError("Limit orders require a limit price greater than zero.")
+        if self.extended_hours and self.order_type != "limit":
+            raise ValueError("Extended-hours orders must be limit orders.")
+        return self
 
 
 class OrderRead(BaseModel):
@@ -20,13 +32,27 @@ class OrderRead(BaseModel):
 
     id: int
     broker_order_id: str | None
+    created_at: datetime
+    strategy_instance_id: int | None
     symbol: str
     side: str
     order_type: str
     qty: float
+    limit_price: float | None
+    raw: dict[str, Any] | None = Field(default=None, exclude=True)
     status: str
     filled_qty: float
     filled_avg_price: float | None
+
+    @computed_field
+    @property
+    def source(self) -> Literal["manual", "automated"]:
+        return "automated" if self.strategy_instance_id is not None else "manual"
+
+    @computed_field
+    @property
+    def extended_hours(self) -> bool:
+        return bool((self.raw or {}).get("extended_hours"))
 
 
 class PositionRead(BaseModel):
@@ -61,6 +87,8 @@ class MarketBarSeriesRead(BaseModel):
 class MarketBarsRead(BaseModel):
     timeframe: str
     lookback_days: int
+    start_date: str | None = None
+    end_date: str | None = None
     series: list[MarketBarSeriesRead]
 
 

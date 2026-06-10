@@ -17,6 +17,7 @@ import {
   DEFAULT_POSITION_SIZING,
   PositionSizingFields,
 } from "@/components/position-sizing-fields";
+import { chartTooltipProps } from "@/components/chart-tooltip";
 import { Field, MetricGrid, MetricTile } from "@/components/workbench";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
@@ -180,6 +181,7 @@ export function StrategyBacktest({ strategy }: { strategy: StrategyDescriptor })
                   fontSize={12}
                 />
                 <Tooltip
+                  {...chartTooltipProps}
                   formatter={(value) => [
                     usd(Number(value ?? 0)),
                     t.strategyBacktest.equity,

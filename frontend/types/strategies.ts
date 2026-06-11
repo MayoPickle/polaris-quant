@@ -1,3 +1,5 @@
+import type { BrokerEnv } from "./account";
+
 export interface StrategyDescriptor {
   key: string;
   name: string;
@@ -7,6 +9,7 @@ export interface StrategyDescriptor {
 
 export interface StrategyInstance {
   id: number;
+  broker_env: BrokerEnv;
   name: string;
   strategy_key: string;
   params: Record<string, unknown>;

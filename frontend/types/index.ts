@@ -1,7 +1,12 @@
 // TypeScript types mirroring the backend Pydantic schemas.
 // Keep in sync with backend/app/schemas/.
 
-export type { Account, Health, Position } from "./account";
+export type {
+  Account,
+  BrokerEnv,
+  Health,
+  Position,
+} from "./account";
 export type { AuthCredentials, AuthUser, SetupStatus } from "./auth";
 export type {
   BacktestCompareRequest,

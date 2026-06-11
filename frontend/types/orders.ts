@@ -1,3 +1,5 @@
+import type { BrokerEnv } from "./account";
+
 export type OrderSide = "buy" | "sell";
 export type OrderSource = "manual" | "automated";
 export type OrderType = "market" | "limit" | "stop" | "stop_limit";
@@ -13,6 +15,7 @@ export interface OrderCreate {
 
 export interface Order {
   id: number;
+  broker_env: BrokerEnv;
   broker_order_id: string | null;
   created_at: string;
   strategy_instance_id: number | null;

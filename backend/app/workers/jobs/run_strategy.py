@@ -52,8 +52,16 @@ def run_strategy_instance(db: Session, instance_id: int, broker: BrokerClient | 
     if instance is None or not instance.is_active:
         logger.info("Strategy %s missing or inactive; skipping", instance_id)
         return
+    if settings.WORKER_BROKER_ENV != "all" and instance.broker_env != settings.WORKER_BROKER_ENV:
+        logger.warning(
+            "Worker for %s skipped %s strategy %s",
+            settings.WORKER_BROKER_ENV,
+            instance.broker_env,
+            instance_id,
+        )
+        return
 
-    broker = broker or get_broker("alpaca")
+    broker = broker or get_broker("alpaca", paper=instance.broker_env == "paper")
     instance.last_run_at = datetime.now(timezone.utc)
     instance.last_error = None
     db.commit()
@@ -174,7 +182,11 @@ def run_strategy_instance(db: Session, instance_id: int, broker: BrokerClient | 
         request = OrderRequest(symbol=sig.symbol, side=sig.side, qty=qty)
         try:
             order = place_order(
-                db, broker, user_id=instance.user_id, request=request,
+                db,
+                broker,
+                user_id=instance.user_id,
+                broker_env=instance.broker_env,
+                request=request,
                 strategy_instance_id=instance.id,
             )
             audit.meta = {

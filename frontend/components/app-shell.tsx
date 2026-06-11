@@ -9,7 +9,7 @@ import { getDictionary } from "@/lib/i18n/dictionaries";
 import { marketSessionLabel } from "@/lib/i18n/format";
 import { getServerLocale } from "@/lib/i18n/server";
 import { serverApi } from "@/lib/server-api";
-import type { MarketClock } from "@/types";
+import type { Health, MarketClock } from "@/types";
 
 export async function AppShell({
   title,
@@ -31,6 +31,12 @@ export async function AppShell({
   const locale = await getServerLocale();
   const t = getDictionary(locale);
   let marketClock: MarketClock | null = null;
+  let health: Health | null = null;
+  try {
+    health = await serverApi.health();
+  } catch {
+    health = null;
+  }
   try {
     marketClock = await serverApi.marketClock();
   } catch {
@@ -44,7 +50,7 @@ export async function AppShell({
 
   return (
     <div className="flex min-h-dvh flex-1 bg-background">
-      <Sidebar marketStatus={marketStatus} />
+      <Sidebar marketStatus={marketStatus} initialHealth={health} />
       <div className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="sticky top-0 z-30 border-b bg-card/95 px-4 pt-[max(env(safe-area-inset-top),0px)] shadow-[0_1px_2px_rgba(15,23,42,0.03)] backdrop-blur md:hidden">
           <div className="flex h-14 items-center justify-between gap-3">
@@ -60,7 +66,7 @@ export async function AppShell({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <ControlCenter marketStatus={marketStatus} compact />
+              <ControlCenter marketStatus={marketStatus} initialHealth={health} compact />
             </div>
           </div>
         </header>

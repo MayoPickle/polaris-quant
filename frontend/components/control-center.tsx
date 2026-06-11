@@ -8,9 +8,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { Badge } from "@/components/ui/badge";
 import { LanguageToggle } from "@/components/language-toggle";
 import { MarketSessionBadge } from "@/components/market-session-badge";
 import {
@@ -27,8 +28,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/client";
+import { brokerEnvLabel } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
+import type { BrokerEnv, Health } from "@/types";
 
 type MarketStatus = {
   label: string;
@@ -36,18 +40,72 @@ type MarketStatus = {
   isOpen: boolean | null;
 };
 
+const BROKER_ENV_COOKIE = "polaris_broker_env";
+const BROKER_ENV_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+
 export function ControlCenter({
   marketStatus,
+  initialHealth,
   compact = false,
   className,
 }: {
   marketStatus: MarketStatus;
+  initialHealth?: Health | null;
   compact?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [health, setHealth] = useState<Health | null>(initialHealth ?? null);
+  const [switchingEnv, setSwitchingEnv] = useState<BrokerEnv | null>(null);
+  const [pendingLive, setPendingLive] = useState(false);
+  const [liveConfirmation, setLiveConfirmation] = useState("");
+  const [modeError, setModeError] = useState<string | null>(null);
   const pathname = usePathname();
-  const { t } = useI18n();
+  const router = useRouter();
+  const { locale, t } = useI18n();
+
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+    api
+      .health()
+      .then((nextHealth) => {
+        if (!cancelled) setHealth(nextHealth);
+      })
+      .catch(() => {
+        if (!cancelled) setModeError(t.shell.tradingModeLoadError);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, t.shell.tradingModeLoadError]);
+
+  async function switchBrokerEnv(nextMode: BrokerEnv) {
+    setModeError(null);
+    if (nextMode === "live" && liveConfirmation !== "LIVE") {
+      setPendingLive(true);
+      setModeError(t.shell.liveModeConfirmationError);
+      return;
+    }
+
+    setSwitchingEnv(nextMode);
+    try {
+      setBrokerEnvCookie(nextMode);
+      const nextHealth = await api.health();
+      setHealth({ ...nextHealth, broker_env: nextMode });
+      setPendingLive(false);
+      setLiveConfirmation("");
+      router.refresh();
+    } catch (exc) {
+      setModeError(
+        exc instanceof Error ? exc.message : t.shell.tradingModeSwitchError
+      );
+    } finally {
+      setSwitchingEnv(null);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -75,16 +133,109 @@ export function ControlCenter({
             title={t.shell.sessionTitle}
             description={t.shell.sessionDescription}
           >
-            <div className="flex items-center justify-between gap-3 rounded-lg border bg-background/70 px-3 py-2.5">
-              <span className="text-sm font-medium text-muted-foreground">
-                {marketStatus.label}
-              </span>
-              <MarketSessionBadge
-                label={marketStatus.label}
-                value={marketStatus.value}
-                isOpen={marketStatus.isOpen}
-                compact
-              />
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-3 rounded-lg border bg-background/70 px-3 py-2.5">
+                <span className="text-sm font-medium text-muted-foreground">
+                  {marketStatus.label}
+                </span>
+                <MarketSessionBadge
+                  label={marketStatus.label}
+                  value={marketStatus.value}
+                  isOpen={marketStatus.isOpen}
+                  compact
+                />
+              </div>
+              <div
+                className={cn(
+                  "grid gap-3 rounded-lg border bg-background/70 p-3",
+                  health?.broker_env === "live" &&
+                    "border-destructive/40 bg-destructive/5"
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold">
+                      {t.shell.tradingModeTitle}
+                    </div>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      {t.shell.tradingModeDescription}
+                    </p>
+                  </div>
+                  <Badge
+                    variant={health?.broker_env === "live" ? "destructive" : "secondary"}
+                    className="shrink-0"
+                  >
+                    {brokerEnvLabel(health?.broker_env, locale)}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={health?.broker_env === "paper" ? "default" : "outline"}
+                    size="sm"
+                    disabled={switchingEnv !== null || health?.broker_env === "paper"}
+                    onClick={() => switchBrokerEnv("paper")}
+                  >
+                    {switchingEnv === "paper"
+                      ? t.shell.tradingModeSwitching
+                      : t.shell.switchToPaperTrading}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={health?.broker_env === "live" ? "destructive" : "outline"}
+                    size="sm"
+                    disabled={switchingEnv !== null || health?.broker_env === "live"}
+                    onClick={() => setPendingLive(true)}
+                  >
+                    {t.shell.switchToLiveTrading}
+                  </Button>
+                </div>
+                {pendingLive && health?.broker_env !== "live" && (
+                  <div className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-2.5">
+                    <p className="text-xs leading-5 text-destructive">
+                      {t.shell.liveModeWarning}
+                    </p>
+                    <label className="grid gap-1.5 text-xs font-medium">
+                      {t.shell.liveModeConfirmationLabel}
+                      <input
+                        value={liveConfirmation}
+                        onChange={(event) => setLiveConfirmation(event.target.value)}
+                        placeholder={t.shell.liveModeConfirmationPlaceholder}
+                        className="h-9 rounded-md border bg-background px-2 text-sm"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={switchingEnv !== null}
+                        onClick={() => switchBrokerEnv("live")}
+                      >
+                        {switchingEnv === "live"
+                          ? t.shell.tradingModeSwitching
+                          : t.shell.confirmLiveTrading}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={switchingEnv !== null}
+                        onClick={() => {
+                          setPendingLive(false);
+                          setLiveConfirmation("");
+                          setModeError(null);
+                        }}
+                      >
+                        {t.common.cancel}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {modeError && (
+                  <p className="text-xs leading-5 text-destructive">{modeError}</p>
+                )}
+              </div>
             </div>
           </ControlCenterSection>
 
@@ -207,4 +358,13 @@ function operationDescription(
   if (labelKey === "history") return labels.historyDescription;
   if (labelKey === "analysis") return labels.analysisDescription;
   return labels.dataDescription;
+}
+
+function setBrokerEnvCookie(env: BrokerEnv) {
+  document.cookie = [
+    `${BROKER_ENV_COOKIE}=${env}`,
+    "path=/",
+    `max-age=${BROKER_ENV_COOKIE_MAX_AGE}`,
+    "SameSite=Lax",
+  ].join("; ");
 }

@@ -20,6 +20,7 @@ class StrategyInstance(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    broker_env: Mapped[str] = mapped_column(String(16), default="paper", index=True)
 
     name: Mapped[str] = mapped_column(String(120))
     # Registry key of the strategy implementation, e.g. "sma_cross".

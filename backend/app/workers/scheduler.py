@@ -38,8 +38,10 @@ def _reconcile_strategies(scheduler: BlockingScheduler) -> None:
         instances = (
             db.query(StrategyInstance)
             .filter(StrategyInstance.is_active.is_(True), StrategyInstance.schedule != "")
-            .all()
         )
+        if settings.WORKER_BROKER_ENV != "all":
+            instances = instances.filter(StrategyInstance.broker_env == settings.WORKER_BROKER_ENV)
+        instances = instances.all()
         active_job_ids = {f"strategy-instance-{inst.id}" for inst in instances}
         for job in scheduler.get_jobs():
             if job.id.startswith("strategy-instance-") and job.id not in active_job_ids:
@@ -55,7 +57,13 @@ def _reconcile_strategies(scheduler: BlockingScheduler) -> None:
                 id=job_id,
                 replace_existing=True,
             )
-            logger.info("Scheduled strategy %s (%s) at '%s'", inst.id, inst.name, inst.schedule)
+            logger.info(
+                "Scheduled %s strategy %s (%s) at '%s'",
+                inst.broker_env,
+                inst.id,
+                inst.name,
+                inst.schedule,
+            )
     finally:
         db.close()
 
@@ -85,11 +93,15 @@ def build_scheduler() -> BlockingScheduler:
         id="strategy-reconcile",
         replace_existing=True,
     )
-    scheduler.add_job(
-        _enqueue_daily_market_data_sync,
-        CronTrigger.from_crontab(settings.MARKET_DATA_SYNC_CRON, timezone=settings.SCHEDULER_TIMEZONE),
-        id="market-data-daily-sync",
-        replace_existing=True,
-    )
+    if settings.WORKER_ENABLE_MARKET_DATA_SYNC:
+        scheduler.add_job(
+            _enqueue_daily_market_data_sync,
+            CronTrigger.from_crontab(
+                settings.MARKET_DATA_SYNC_CRON,
+                timezone=settings.SCHEDULER_TIMEZONE,
+            ),
+            id="market-data-daily-sync",
+            replace_existing=True,
+        )
     _reconcile_strategies(scheduler)
     return scheduler

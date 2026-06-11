@@ -45,6 +45,7 @@ class StrategyInstanceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    broker_env: Literal["paper", "live"] = "paper"
     name: str
     strategy_key: str
     params: dict

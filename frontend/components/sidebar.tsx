@@ -8,15 +8,18 @@ import { Logo } from "@/components/logo";
 import { isNavItemActive, PRIMARY_NAV_ITEMS } from "@/components/nav-items";
 import { useI18n } from "@/lib/i18n/client";
 import { cn } from "@/lib/utils";
+import type { Health } from "@/types";
 
 export function Sidebar({
   marketStatus,
+  initialHealth,
 }: {
   marketStatus: {
     label: string;
     value: string;
     isOpen: boolean | null;
   };
+  initialHealth: Health | null;
 }) {
   const pathname = usePathname();
   const { t } = useI18n();
@@ -64,6 +67,7 @@ export function Sidebar({
         </p>
         <ControlCenter
           marketStatus={marketStatus}
+          initialHealth={initialHealth}
           className="mt-3 w-full justify-start"
         />
       </div>

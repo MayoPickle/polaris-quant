@@ -76,9 +76,8 @@ def db_session():
         yield db
 
 
-def test_live_activation_requires_confirmation(monkeypatch) -> None:
+def test_live_activation_requires_confirmation() -> None:
     registry.load_builtin_strategies()
-    monkeypatch.setattr(settings, "ALPACA_ENV", "live")
 
     with pytest.raises(HTTPException) as exc:
         _validate_strategy_payload(
@@ -87,6 +86,7 @@ def test_live_activation_requires_confirmation(monkeypatch) -> None:
             schedule="55 10-15 * * mon-fri",
             is_active=True,
             live_confirmed=False,
+            broker_env="live",
         )
 
     assert exc.value.status_code == 400
@@ -154,6 +154,33 @@ def test_strategy_run_places_one_order_and_skips_duplicate(monkeypatch, db_sessi
     assert submitted_signal.meta["status"] == "submitted"
     assert submitted_signal.meta["order_id"] == 1
     assert submitted_signal.meta["broker_order_id"] == "order-1"
+
+
+def test_worker_skips_strategy_from_other_broker_environment(monkeypatch, db_session) -> None:
+    registry.load_builtin_strategies()
+    monkeypatch.setattr(settings, "WORKER_BROKER_ENV", "paper")
+
+    instance = StrategyInstance(
+        user_id=1,
+        broker_env="live",
+        name="Live SMA",
+        strategy_key="sma_cross",
+        params={"fast": 2, "slow": 3, "qty": 1},
+        symbols=["AAPL"],
+        schedule="55 10-15 * * mon-fri",
+        is_active=True,
+    )
+    db_session.add(instance)
+    db_session.commit()
+    db_session.refresh(instance)
+    broker = FakeBroker()
+
+    run_strategy_instance(db_session, instance.id, broker=broker)
+
+    assert broker.submitted == []
+    assert db_session.query(Order).count() == 0
+    assert db_session.query(SignalModel).count() == 0
+    assert instance.last_run_at is None
 
 
 def test_buy_signal_can_be_blocked_by_risk_limit(monkeypatch, db_session) -> None:

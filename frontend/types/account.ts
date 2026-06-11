@@ -1,8 +1,10 @@
+export type BrokerEnv = "paper" | "live";
+
 export interface Health {
   status: string;
   app: string;
   env: string;
-  broker_env: "paper" | "live";
+  broker_env: BrokerEnv;
   trading_enabled: boolean;
   openai_sizing_enabled: boolean;
   position_model: string;
@@ -22,4 +24,3 @@ export interface Position {
   market_value: number;
   unrealized_pl: number;
 }
-

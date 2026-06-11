@@ -5,4 +5,11 @@ needed — e.g. Alembic's env.py or `Base.metadata.create_all()`.
 """
 
 from app.db.base import Base  # noqa: F401
-from app.models import backtest, broker_token, market_data, order, strategy, user  # noqa: F401
+from app.models import (  # noqa: F401
+    backtest,
+    broker_token,
+    market_data,
+    order,
+    strategy,
+    user,
+)

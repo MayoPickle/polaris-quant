@@ -20,6 +20,7 @@ class Order(Base, TimestampMixin):
 
     # Broker-assigned id (None until the broker accepts the order).
     broker_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    broker_env: Mapped[str] = mapped_column(String(16), default="paper", index=True)
 
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     side: Mapped[str] = mapped_column(Enum("buy", "sell", name="order_side"))

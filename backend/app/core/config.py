@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     ALPACA_ENV: Literal["paper", "live"] = "paper"
     ALPACA_API_KEY: str = ""
     ALPACA_API_SECRET: str = ""
+    ALPACA_PAPER_API_KEY: str = ""
+    ALPACA_PAPER_API_SECRET: str = ""
+    ALPACA_LIVE_API_KEY: str = ""
+    ALPACA_LIVE_API_SECRET: str = ""
     ALPACA_PAPER_BASE_URL: str = "https://paper-api.alpaca.markets"
     ALPACA_LIVE_BASE_URL: str = "https://api.alpaca.markets"
     ALPACA_DATA_URL: str = "https://data.alpaca.markets"
@@ -70,6 +74,8 @@ class Settings(BaseSettings):
     MARKET_TIMEZONE: str = "America/New_York"
 
     # ---- Automated strategy trading ----
+    WORKER_BROKER_ENV: Literal["paper", "live", "all"] = "paper"
+    WORKER_ENABLE_MARKET_DATA_SYNC: bool = True
     DEFAULT_STRATEGY_SCHEDULE: str = "55 10-15 * * mon-fri"
     STRATEGY_TIMEFRAME: Literal["1Hour"] = "1Hour"
     STRATEGY_LOOKBACK_DAYS: int = 30
@@ -121,6 +127,16 @@ class Settings(BaseSettings):
     @property
     def alpaca_base_url(self) -> str:
         return self.ALPACA_PAPER_BASE_URL if self.is_paper else self.ALPACA_LIVE_BASE_URL
+
+    def alpaca_api_key_for_env(self, *, paper: bool) -> str:
+        if paper:
+            return self.ALPACA_PAPER_API_KEY or (self.ALPACA_API_KEY if self.is_paper else "")
+        return self.ALPACA_LIVE_API_KEY or (self.ALPACA_API_KEY if not self.is_paper else "")
+
+    def alpaca_api_secret_for_env(self, *, paper: bool) -> str:
+        if paper:
+            return self.ALPACA_PAPER_API_SECRET or (self.ALPACA_API_SECRET if self.is_paper else "")
+        return self.ALPACA_LIVE_API_SECRET or (self.ALPACA_API_SECRET if not self.is_paper else "")
 
 
 @lru_cache

@@ -32,6 +32,7 @@ class OrderRead(BaseModel):
 
     id: int
     broker_order_id: str | None
+    broker_env: Literal["paper", "live"] = "paper"
     created_at: datetime
     strategy_instance_id: int | None
     symbol: str

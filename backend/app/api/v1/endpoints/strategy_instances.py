@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user_id
+from app.api.deps import BrokerEnv, get_current_user_id, get_request_broker_env
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.strategy import Signal as SignalModel
@@ -29,8 +29,12 @@ def list_instances(
     include_archived: bool = False,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
+    broker_env: BrokerEnv = Depends(get_request_broker_env),
 ) -> list[StrategyInstance]:
-    query = db.query(StrategyInstance).filter(StrategyInstance.user_id == user_id)
+    query = db.query(StrategyInstance).filter(
+        StrategyInstance.user_id == user_id,
+        StrategyInstance.broker_env == broker_env,
+    )
     if not include_archived:
         query = query.filter(StrategyInstance.archived_at.is_(None))
     return query.order_by(StrategyInstance.created_at.desc(), StrategyInstance.id.desc()).all()
@@ -41,6 +45,7 @@ def create_instance(
     payload: StrategyInstanceCreate,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
+    broker_env: BrokerEnv = Depends(get_request_broker_env),
 ) -> StrategyInstance:
     _validate_strategy_payload(
         payload.strategy_key,
@@ -48,6 +53,7 @@ def create_instance(
         schedule=payload.schedule,
         is_active=payload.is_active,
         live_confirmed=payload.live_confirmed,
+        broker_env=broker_env,
     )
 
     data = payload.model_dump(exclude={"live_confirmed"})
@@ -55,7 +61,7 @@ def create_instance(
         data["schedule"] = settings.DEFAULT_STRATEGY_SCHEDULE
     data["symbols"] = _normalize_symbols(data["symbols"])
 
-    instance = StrategyInstance(user_id=user_id, **data)
+    instance = StrategyInstance(user_id=user_id, broker_env=broker_env, **data)
     db.add(instance)
     db.commit()
     db.refresh(instance)
@@ -68,11 +74,12 @@ def list_signals(
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
+    broker_env: BrokerEnv = Depends(get_request_broker_env),
 ) -> list[StrategySignalRead]:
     query = (
         db.query(SignalModel, StrategyInstance)
         .join(StrategyInstance, SignalModel.strategy_instance_id == StrategyInstance.id)
-        .filter(StrategyInstance.user_id == user_id)
+        .filter(StrategyInstance.user_id == user_id, StrategyInstance.broker_env == broker_env)
     )
     if strategy_instance_id is not None:
         query = query.filter(SignalModel.strategy_instance_id == strategy_instance_id)
@@ -91,8 +98,9 @@ def update_instance(
     payload: StrategyInstanceUpdate,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
+    broker_env: BrokerEnv = Depends(get_request_broker_env),
 ) -> StrategyInstance:
-    instance = _get_instance(db, user_id, instance_id)
+    instance = _get_instance(db, user_id, broker_env, instance_id)
     if instance.archived_at is not None:
         raise HTTPException(409, "Archived strategy cannot be modified.")
     next_strategy_key = instance.strategy_key
@@ -106,6 +114,7 @@ def update_instance(
         schedule=next_schedule,
         is_active=next_is_active,
         live_confirmed=payload.live_confirmed,
+        broker_env=broker_env,
     )
 
     if payload.name is not None:
@@ -133,8 +142,9 @@ def archive_instance(
     instance_id: int,
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
+    broker_env: BrokerEnv = Depends(get_request_broker_env),
 ) -> StrategyInstance:
-    instance = _get_instance(db, user_id, instance_id)
+    instance = _get_instance(db, user_id, broker_env, instance_id)
     if instance.is_active:
         raise HTTPException(409, "Active strategies must be paused before archiving.")
     if instance.archived_at is None:
@@ -151,6 +161,7 @@ def _validate_strategy_payload(
     schedule: str,
     is_active: bool,
     live_confirmed: bool,
+    broker_env: BrokerEnv,
 ) -> None:
     try:
         registry.get_strategy_class(strategy_key)
@@ -159,7 +170,7 @@ def _validate_strategy_payload(
 
     if not is_active:
         return
-    if settings.ALPACA_ENV == "live" and not live_confirmed:
+    if broker_env == "live" and not live_confirmed:
         raise HTTPException(400, "Type LIVE to confirm live automated trading.")
     if not _normalize_symbols(symbols):
         raise HTTPException(422, "Active strategies require at least one symbol.")
@@ -173,10 +184,19 @@ def _normalize_symbols(symbols: list[str]) -> list[str]:
     return sorted({s.strip().upper() for s in symbols if s.strip()})
 
 
-def _get_instance(db: Session, user_id: int, instance_id: int) -> StrategyInstance:
+def _get_instance(
+    db: Session,
+    user_id: int,
+    broker_env: BrokerEnv,
+    instance_id: int,
+) -> StrategyInstance:
     instance = (
         db.query(StrategyInstance)
-        .filter(StrategyInstance.id == instance_id, StrategyInstance.user_id == user_id)
+        .filter(
+            StrategyInstance.id == instance_id,
+            StrategyInstance.user_id == user_id,
+            StrategyInstance.broker_env == broker_env,
+        )
         .one_or_none()
     )
     if instance is None:

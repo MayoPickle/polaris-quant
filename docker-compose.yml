@@ -94,11 +94,38 @@ services:
       SQL_ECHO: "false"
       SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      WORKER_BROKER_ENV: paper
+      WORKER_ENABLE_MARKET_DATA_SYNC: "true"
       REDIS_URL: redis://redis:6379/0
       MARKET_DATA_QUEUE_NAME: ${MARKET_DATA_QUEUE_NAME:-market_data}
       MARKET_DATA_SYMBOLS_PER_REQUEST: ${MARKET_DATA_SYMBOLS_PER_REQUEST:-25}
       MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: ${MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY:-true}
       MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: ${MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS:-50}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker_live:
+    build: ./backend
+    command: python -m app.workers.runtime
+    logging: *default-logging
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      ENV: production
+      DEBUG: "false"
+      SQL_ECHO: "false"
+      SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      WORKER_BROKER_ENV: live
+      WORKER_ENABLE_MARKET_DATA_SYNC: "false"
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       migrate:
         condition: service_completed_successfully

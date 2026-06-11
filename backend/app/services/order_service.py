@@ -59,6 +59,7 @@ def place_order(
     broker: BrokerClient,
     *,
     user_id: int,
+    broker_env: str,
     request: OrderRequest,
     strategy_instance_id: int | None = None,
 ) -> Order:
@@ -84,6 +85,7 @@ def place_order(
         user_id=user_id,
         strategy_instance_id=strategy_instance_id,
         broker_order_id=result.broker_order_id,
+        broker_env=broker_env,
         symbol=result.symbol,
         side=result.side,
         order_type=request.order_type,

@@ -77,7 +77,7 @@ def create_market_data_ingestion_job(
         raise HTTPException(422, str(exc)) from exc
 
     try:
-        job.rq_job_id = enqueue_market_data_ingestion(job.id)
+        job.rq_job_id = enqueue_market_data_ingestion(job.id, kind=job.kind)
     except Exception as exc:  # noqa: BLE001
         job.status = "failed"
         job.error = f"Could not enqueue market-data ingestion: {exc}"
@@ -137,7 +137,7 @@ def resume_market_data_ingestion_job(
 ) -> MarketDataIngestionJob:
     job = prepare_resume_ingestion_job(db, get_ingestion_job_or_404(db, job_id))
     try:
-        job.rq_job_id = enqueue_market_data_ingestion(job.id)
+        job.rq_job_id = enqueue_market_data_ingestion(job.id, kind=job.kind)
     except Exception as exc:  # noqa: BLE001
         error = f"Could not enqueue market-data ingestion: {exc}"
         fail_resume_ingestion_job(db, job, error)

@@ -71,6 +71,7 @@ export const enUSBase = {
       operationsTitle: "Operations",
       operationsDescription: "Order flow and data tools stay one step away.",
       historyDescription: "Review manual and automated trade history.",
+      marketDescription: "Check market status, quotes, and price context.",
       dataDescription: "Manage market-data coverage and ingestion jobs.",
       analysisDescription: "Fit price curves and inspect residuals.",
     },

@@ -37,6 +37,17 @@ class MarketAssetRead(BaseModel):
     easy_to_borrow: bool
 
 
+class MarketAssetSummaryRead(BaseModel):
+    symbol: str
+    name: str
+    asset_class: str
+    exchange: str
+
+
+class MarketAssetsRead(BaseModel):
+    assets: list[MarketAssetSummaryRead]
+
+
 class MarketAssetRefreshRead(BaseModel):
     refreshed: int
 

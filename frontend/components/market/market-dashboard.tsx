@@ -755,7 +755,8 @@ function PriceChart({
   volumeLabel: string;
 }) {
   const isOneDayIntradayWindow = timeframe !== "1Day" && lookbackDays === 1;
-  const isCompressedIntradayWindow = timeframe !== "1Day" && !isOneDayIntradayWindow;
+  const isCompressedIntradayWindow =
+    timeframe !== "1Day" && !isOneDayIntradayWindow;
   const oneDayIntradayDomain = useMemo(
     () => (isOneDayIntradayWindow ? getOneDayIntradayDomain(rows) : null),
     [isOneDayIntradayWindow, rows]
@@ -819,10 +820,7 @@ function PriceChart({
         height="100%"
         initialDimension={INITIAL_CHART_DIMENSION}
       >
-        <ComposedChart
-          data={displayRows}
-          margin={chartMargin}
-        >
+        <ComposedChart data={displayRows} margin={chartMargin}>
           <CartesianGrid
             stroke={CHART_COLORS.grid}
             strokeDasharray="3 3"

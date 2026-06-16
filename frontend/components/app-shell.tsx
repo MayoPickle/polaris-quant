@@ -71,7 +71,7 @@ export async function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 px-4 py-4 pb-28 md:px-6 md:py-5 lg:px-8">
+        <main className="flex-1 px-4 py-4 pb-[calc(7rem+env(safe-area-inset-bottom))] md:px-6 md:py-5 lg:px-8">
           <header className="mb-4 rounded-lg border bg-card px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:mb-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">

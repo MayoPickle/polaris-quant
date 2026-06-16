@@ -31,6 +31,17 @@ export interface MarketClock {
   is_open: boolean;
 }
 
+export interface MarketAssetSummary {
+  symbol: string;
+  name: string;
+  asset_class: string;
+  exchange: string;
+}
+
+export interface MarketAssetsResponse {
+  assets: MarketAssetSummary[];
+}
+
 export interface MarketSnapshot {
   symbol: string;
   latest_trade_price: number | null;

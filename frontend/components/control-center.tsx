@@ -351,11 +351,13 @@ function operationDescription(
   labelKey: NavItem["labelKey"],
   labels: {
     historyDescription: string;
+    marketDescription: string;
     dataDescription: string;
     analysisDescription: string;
   }
 ) {
   if (labelKey === "history") return labels.historyDescription;
+  if (labelKey === "market") return labels.marketDescription;
   if (labelKey === "analysis") return labels.analysisDescription;
   return labels.dataDescription;
 }

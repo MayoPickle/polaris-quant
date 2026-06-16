@@ -8,9 +8,13 @@ import math
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_broker_client
 from app.brokers.base import BrokerClient, MarketSnapshot
+from app.db.session import get_db
+from app.models.market_data import MarketAsset
+from app.schemas.market_data import MarketAssetSummaryRead, MarketAssetsRead
 from app.schemas.order import (
     MarketBarRead,
     MarketBarsRead,
@@ -102,6 +106,35 @@ def get_snapshots(
 
     return MarketSnapshotsRead(
         snapshots=[_snapshot_read(snapshot) for snapshot in snapshots]
+    )
+
+
+@router.get("/assets", response_model=MarketAssetsRead)
+def get_market_assets(
+    symbols: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+) -> MarketAssetsRead:
+    normalized = _normalize_symbols(symbols)
+    if len(normalized) > _MAX_SNAPSHOT_SYMBOLS:
+        raise HTTPException(422, f"At most {_MAX_SNAPSHOT_SYMBOLS} symbols are supported.")
+
+    rows = (
+        db.query(MarketAsset)
+        .filter(MarketAsset.symbol.in_(normalized))
+        .all()
+    )
+    by_symbol = {row.symbol.upper(): row for row in rows}
+    return MarketAssetsRead(
+        assets=[
+            MarketAssetSummaryRead(
+                symbol=row.symbol,
+                name=row.name,
+                asset_class=row.asset_class,
+                exchange=row.exchange,
+            )
+            for symbol in normalized
+            if (row := by_symbol.get(symbol)) is not None
+        ]
     )
 
 

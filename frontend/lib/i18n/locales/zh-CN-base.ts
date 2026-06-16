@@ -67,6 +67,7 @@ export const zhCNBase = {
       operationsTitle: "运行与数据",
       operationsDescription: "订单流和数据工具从这里进入。",
       historyDescription: "查看手动与自动交易历史。",
+      marketDescription: "查看市场状态、报价与价格上下文。",
       dataDescription: "管理行情数据覆盖范围与写库任务。",
       analysisDescription: "拟合价格曲线并检查残差。",
     },

@@ -20,6 +20,8 @@ export type {
   BatchBacktestSymbolResult,
 } from "./backtests";
 export type {
+  MarketAssetSummary,
+  MarketAssetsResponse,
   MarketBar,
   MarketBarsResponse,
   MarketBarSeries,

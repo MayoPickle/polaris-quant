@@ -184,6 +184,34 @@ services:
       redis:
         condition: service_healthy
 
+  market_data_backfill_worker:
+    build: ./backend
+    command: python -m app.workers.market_data_worker
+    logging: *default-logging
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://polaris:polaris@db:5432/polaris
+      ENV: production
+      DEBUG: "false"
+      SQL_ECHO: "false"
+      SQLALCHEMY_LOG_LEVEL: ${SQLALCHEMY_LOG_LEVEL:-WARNING}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      REDIS_URL: redis://redis:6379/0
+      MARKET_DATA_QUEUE_NAME: ${MARKET_DATA_BACKFILL_QUEUE_NAME:-market_data_backfill}
+      MARKET_DATA_JOB_TIMEOUT_SECONDS: ${MARKET_DATA_BACKFILL_JOB_TIMEOUT_SECONDS:-2592000}
+      MARKET_DATA_SYMBOLS_PER_REQUEST: ${MARKET_DATA_SYMBOLS_PER_REQUEST:-25}
+      MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: ${MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY:-true}
+      MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: ${MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS:-50}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend

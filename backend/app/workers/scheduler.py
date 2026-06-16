@@ -75,7 +75,7 @@ def _enqueue_daily_market_data_sync() -> None:
         if job.rq_job_id:
             logger.info("Market-data sync job %s is already queued as %s", job.id, job.rq_job_id)
             return
-        job.rq_job_id = enqueue_market_data_ingestion(job.id)
+        job.rq_job_id = enqueue_market_data_ingestion(job.id, kind=job.kind)
         db.commit()
         logger.info("Queued market-data sync job %s as %s", job.id, job.rq_job_id)
     except Exception:  # noqa: BLE001

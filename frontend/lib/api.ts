@@ -15,6 +15,7 @@ import type {
   BatchBacktestRequest,
   Health,
   MarketClock,
+  MarketAssetsResponse,
   MarketBarsResponse,
   MarketSnapshotsResponse,
   MarketDataAssetRefresh,
@@ -231,6 +232,15 @@ export function createApiClient(headerProvider?: HeaderProvider) {
       const params = new URLSearchParams({ symbols: symbols.join(",") });
       return request<MarketSnapshotsResponse>(
         `/market/snapshots?${params}`,
+        undefined,
+        undefined,
+        headerProvider
+      );
+    },
+    marketAssets: (symbols: string[]) => {
+      const params = new URLSearchParams({ symbols: symbols.join(",") });
+      return request<MarketAssetsResponse>(
+        `/market/assets?${params}`,
         undefined,
         undefined,
         headerProvider

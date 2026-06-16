@@ -19,10 +19,16 @@ from app.models.market_data import MarketAsset, MarketBar, MarketDataCoverage, M
 def test_market_data_ingestion_job_api(monkeypatch) -> None:
     Session = _session_factory()
     _install_overrides(Session)
+    enqueued: list[tuple[str, str | None]] = []
+
+    def fake_enqueue(job_id: str, *, kind: str | None = None) -> str:
+        enqueued.append((job_id, kind))
+        return f"rq-{job_id}"
+
     monkeypatch.setattr(
         market_data_endpoint,
         "enqueue_market_data_ingestion",
-        lambda job_id: f"rq-{job_id}",
+        fake_enqueue,
     )
     client = TestClient(app)
 
@@ -46,6 +52,7 @@ def test_market_data_ingestion_job_api(monkeypatch) -> None:
         assert payload["symbols"] == ["AAPL"]
         assert payload["status"] == "queued"
         assert payload["rq_job_id"].startswith("rq-")
+        assert enqueued == [(payload["id"], "backfill")]
 
         latest = client.get("/api/v1/market-data/ingestion-jobs/latest")
         assert latest.status_code == 200
@@ -68,7 +75,7 @@ def test_market_data_pause_resume_api(monkeypatch) -> None:
     monkeypatch.setattr(
         market_data_endpoint,
         "enqueue_market_data_ingestion",
-        lambda job_id: f"rq-resumed-{job_id}",
+        lambda job_id, *, kind=None: f"rq-resumed-{job_id}",
     )
     client = TestClient(app)
 
@@ -308,6 +315,39 @@ def test_market_data_assets_refresh_and_coverage_api(monkeypatch) -> None:
         _clear_overrides()
 
 
+def test_market_assets_summary_api() -> None:
+    Session = _session_factory()
+    _install_overrides(Session)
+    client = TestClient(app)
+
+    try:
+        with Session() as db:
+            db.add(_asset("MSFT", name="Microsoft Corporation"))
+            db.add(_asset("AAPL", name="Apple Inc."))
+            db.commit()
+
+        response = client.get("/api/v1/market/assets?symbols=aapl,missing,msft")
+        assert response.status_code == 200
+        assert response.json() == {
+            "assets": [
+                {
+                    "symbol": "AAPL",
+                    "name": "Apple Inc.",
+                    "asset_class": "us_equity",
+                    "exchange": "NASDAQ",
+                },
+                {
+                    "symbol": "MSFT",
+                    "name": "Microsoft Corporation",
+                    "asset_class": "us_equity",
+                    "exchange": "NASDAQ",
+                },
+            ]
+        }
+    finally:
+        _clear_overrides()
+
+
 def _session_factory():
     engine = create_engine(
         "sqlite://",
@@ -335,11 +375,11 @@ def _clear_overrides() -> None:
     app.dependency_overrides.pop(get_current_user_id, None)
 
 
-def _asset(symbol: str) -> MarketAsset:
+def _asset(symbol: str, name: str | None = None) -> MarketAsset:
     return MarketAsset(
         symbol=symbol,
         asset_id=f"{symbol}-id",
-        name=symbol,
+        name=name or symbol,
         asset_class="us_equity",
         exchange="NASDAQ",
         status="active",

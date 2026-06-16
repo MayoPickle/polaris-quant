@@ -26,11 +26,19 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
   { labelKey: "automation", href: "/automation", icon: Bot },
   { labelKey: "trading", href: "/trading", icon: ChartCandlestick },
   { labelKey: "portfolio", href: "/portfolio", icon: BriefcaseBusiness },
-  { labelKey: "market", href: "/market", icon: Search },
+];
+
+export const MOBILE_NAV_ITEMS: NavItem[] = [
+  { labelKey: "overview", href: "/", icon: LayoutDashboard },
+  { labelKey: "strategies", href: "/strategies", icon: BrainCircuit },
+  { labelKey: "trading", href: "/trading", icon: ChartCandlestick },
+  { labelKey: "automation", href: "/automation", icon: Bot },
+  { labelKey: "portfolio", href: "/portfolio", icon: BriefcaseBusiness },
 ];
 
 export const CONTROL_CENTER_NAV_ITEMS: NavItem[] = [
   { labelKey: "history", href: "/history", icon: History },
+  { labelKey: "market", href: "/market", icon: Search },
   { labelKey: "data", href: "/data", icon: Database },
   { labelKey: "analysis", href: "/analysis", icon: ChartSpline },
 ];

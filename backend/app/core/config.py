@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # ---- Market data cache ----
     MARKET_DATA_QUEUE_NAME: str = "market_data"
     MARKET_DATA_JOB_TIMEOUT_SECONDS: int = 60 * 60 * 24
+    MARKET_DATA_BACKFILL_QUEUE_NAME: str = "market_data_backfill"
+    MARKET_DATA_BACKFILL_JOB_TIMEOUT_SECONDS: int = 60 * 60 * 24 * 30
     MARKET_DATA_WORKER_MODE: Literal["simple", "fork"] = "simple"
     MARKET_DATA_DEFAULT_PROVIDER: str = "alpaca"
     MARKET_DATA_DEFAULT_FEED: str = "sip"

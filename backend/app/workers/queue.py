@@ -20,12 +20,28 @@ def get_backtest_queue() -> Queue:
     )
 
 
-def get_market_data_queue() -> Queue:
+def get_market_data_queue(
+    queue_name: str | None = None,
+    *,
+    default_timeout: int | None = None,
+) -> Queue:
     return Queue(
-        settings.MARKET_DATA_QUEUE_NAME,
+        queue_name or settings.MARKET_DATA_QUEUE_NAME,
         connection=get_redis_connection(),
-        default_timeout=settings.MARKET_DATA_JOB_TIMEOUT_SECONDS,
+        default_timeout=default_timeout or settings.MARKET_DATA_JOB_TIMEOUT_SECONDS,
     )
+
+
+def market_data_queue_name_for_kind(kind: str | None) -> str:
+    if kind and kind != "daily_sync":
+        return settings.MARKET_DATA_BACKFILL_QUEUE_NAME
+    return settings.MARKET_DATA_QUEUE_NAME
+
+
+def market_data_job_timeout_for_kind(kind: str | None) -> int:
+    if kind and kind != "daily_sync":
+        return settings.MARKET_DATA_BACKFILL_JOB_TIMEOUT_SECONDS
+    return settings.MARKET_DATA_JOB_TIMEOUT_SECONDS
 
 
 def enqueue_batch_backtest(job_id: str) -> str:
@@ -39,12 +55,16 @@ def enqueue_batch_backtest(job_id: str) -> str:
     return job.id
 
 
-def enqueue_market_data_ingestion(job_id: str) -> str:
-    queue = get_market_data_queue()
+def enqueue_market_data_ingestion(job_id: str, *, kind: str | None = None) -> str:
+    timeout = market_data_job_timeout_for_kind(kind)
+    queue = get_market_data_queue(
+        market_data_queue_name_for_kind(kind),
+        default_timeout=timeout,
+    )
     job = queue.enqueue(
         "app.workers.jobs.run_market_data_ingestion.run_market_data_ingestion_job",
         job_id,
         job_id=job_id,
-        job_timeout=settings.MARKET_DATA_JOB_TIMEOUT_SECONDS,
+        job_timeout=timeout,
     )
     return job.id

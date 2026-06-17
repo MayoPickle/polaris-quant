@@ -8,11 +8,12 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
-  type PointerEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
-import { CircleCheck, History, Send } from "lucide-react";
+import { CircleCheck, GripVertical, History, Plus, Search, Send } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,12 +58,26 @@ const FAVORITE_SYMBOL_PATTERN = /^[A-Z][A-Z0-9.-]{0,14}$/;
 const FAVORITES_STORAGE_KEY = "polaris.market.favoriteSymbols.v1";
 const FAVORITES_CHANGED_EVENT = "polaris-market-favorites-changed";
 const MAX_FAVORITE_SYMBOLS = 20;
+const WATCHLIST_REORDER_LONG_PRESS_MS = 420;
+const WATCHLIST_REORDER_MOVE_CANCEL_PX = 10;
 const WATCHLIST_BAR_TIMEFRAME = "1Min";
 const WATCHLIST_BAR_LOOKBACK_DAYS = 1;
-const SPARKLINE_WIDTH = 120;
-const SPARKLINE_HEIGHT = 44;
-const SPARKLINE_PADDING = 3;
-const SPARKLINE_MAX_POINTS = 56;
+const WATCHLIST_SPARKLINE_GEOMETRY = {
+  width: 120,
+  height: 44,
+  paddingX: 3,
+  paddingTop: 3,
+  paddingBottom: 3,
+  maxPoints: 56,
+} as const;
+const DETAIL_SPARKLINE_GEOMETRY = {
+  width: 180,
+  height: 56,
+  paddingX: 0.5,
+  paddingTop: 1.5,
+  paddingBottom: 0.5,
+  maxPoints: 96,
+} as const;
 const MARKET_TIME_ZONE = "America/New_York";
 const MARKET_SESSION_OPEN = { hour: 9, minute: 30 };
 const MARKET_SESSION_CLOSE = { hour: 16, minute: 0 };
@@ -565,6 +580,14 @@ type TradingWatchlistLabels = {
   watchlistLoading: string;
   watchlistUnavailable: string;
   watchlistEmpty: string;
+  watchlistSearchLabel: string;
+  watchlistSearchPlaceholder: string;
+  watchlistSearchNoResults: string;
+  watchlistSearchFailed: string;
+  watchlistAddFavorite: string;
+  watchlistFavoriteSaved: string;
+  watchlistFavoriteLimit: string;
+  watchlistReorder: string;
   detailTitle: string;
   detailPrice: string;
   detailChange: string;
@@ -580,6 +603,17 @@ type TradingWatchlistLabels = {
   detailExchange: string;
   detailAssetClass: string;
   detailNoData: string;
+  buy: string;
+  market: string;
+  quantity: string;
+  submitting: string;
+  submittedTitle: string;
+  estimatedNotional: string;
+  invalidSymbol: string;
+  invalidQuantity: string;
+  invalidLimitPrice: string;
+  invalidExtendedHours: string;
+  orderFailed: string;
 };
 
 function TradingWatchlist({
@@ -606,6 +640,19 @@ function TradingWatchlist({
   onSelect: (symbol: string) => void;
 }) {
   const [detailSymbol, setDetailSymbol] = useState<string | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchResults, setSearchResults] = useState<MarketAssetSummary[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchedQuery, setSearchedQuery] = useState("");
+  const [reorderingSymbol, setReorderingSymbol] = useState<string | null>(null);
+  const symbolsRef = useRef(symbols);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const reorderRef = useRef<WatchlistReorderSession | null>(null);
+  const suppressNextSelectRef = useRef(false);
+  const searchQuery = searchInput.trim();
+  const hasSearchQuery = searchQuery.length > 0;
+  const favoriteSymbolSet = useMemo(() => new Set(symbols), [symbols]);
   const visibleDetailSymbol =
     detailSymbol && symbols.includes(detailSymbol) ? detailSymbol : null;
   const detailSnapshot = visibleDetailSymbol
@@ -619,11 +666,184 @@ function TradingWatchlist({
     : null;
   const openDetail = useCallback(
     (nextSymbol: string) => {
+      if (suppressNextSelectRef.current) {
+        suppressNextSelectRef.current = false;
+        return;
+      }
       onSelect(nextSymbol);
       setDetailSymbol(nextSymbol);
     },
     [onSelect]
   );
+  const clearReorderSession = useCallback(() => {
+    const session = reorderRef.current;
+    if (!session) return;
+
+    if (session.timerId != null) {
+      window.clearTimeout(session.timerId);
+    }
+    window.removeEventListener("pointermove", session.handlePointerMove);
+    window.removeEventListener("pointerup", session.handlePointerEnd);
+    window.removeEventListener("pointercancel", session.handlePointerEnd);
+    if (session.activated) {
+      suppressNextSelectRef.current = true;
+      window.setTimeout(() => {
+        suppressNextSelectRef.current = false;
+      }, 0);
+    }
+    reorderRef.current = null;
+    setReorderingSymbol(null);
+  }, []);
+  const beginReorderPress = useCallback(
+    (symbol: string, event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (symbolsRef.current.length < 2) return;
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+
+      clearReorderSession();
+      const startY = event.clientY;
+      const pointerId = event.pointerId;
+
+      const activateReorder = () => {
+        const currentSymbols = symbolsRef.current;
+        if (!currentSymbols.includes(symbol)) return;
+
+        const rowRects = measureWatchlistRows(listRef.current);
+        if (rowRects.length < 2) return;
+
+        const session = reorderRef.current;
+        if (!session || session.pointerId !== pointerId) return;
+
+        session.activated = true;
+        session.rowRects = rowRects;
+        session.timerId = null;
+        setReorderingSymbol(symbol);
+      };
+
+      const handlePointerMove = (pointerEvent: PointerEvent) => {
+        const session = reorderRef.current;
+        if (!session || session.pointerId !== pointerEvent.pointerId) return;
+
+        const deltaY = pointerEvent.clientY - session.startY;
+        if (!session.activated) {
+          if (Math.abs(deltaY) > WATCHLIST_REORDER_MOVE_CANCEL_PX) {
+            clearReorderSession();
+          }
+          return;
+        }
+
+        pointerEvent.preventDefault();
+        const currentSymbols = symbolsRef.current;
+        const fromIndex = currentSymbols.indexOf(symbol);
+        if (fromIndex < 0) return;
+
+        const rowRects =
+          session.rowRects.length === currentSymbols.length
+            ? session.rowRects
+            : measureWatchlistRows(listRef.current);
+        session.rowRects = rowRects;
+        const toIndex = watchlistIndexForClientY(pointerEvent.clientY, rowRects);
+        if (toIndex < 0 || toIndex === fromIndex) return;
+
+        const nextSymbols = moveSymbol(currentSymbols, fromIndex, toIndex);
+        symbolsRef.current = nextSymbols;
+        writeFavoriteSymbols(nextSymbols);
+      };
+
+      const handlePointerEnd = (pointerEvent: PointerEvent) => {
+        const session = reorderRef.current;
+        if (!session || session.pointerId !== pointerEvent.pointerId) return;
+        if (session.activated) pointerEvent.preventDefault();
+        clearReorderSession();
+      };
+
+      const timerId = window.setTimeout(
+        activateReorder,
+        WATCHLIST_REORDER_LONG_PRESS_MS
+      );
+      reorderRef.current = {
+        symbol,
+        pointerId,
+        startY,
+        activated: false,
+        timerId,
+        rowRects: [],
+        handlePointerMove,
+        handlePointerEnd,
+      };
+      window.addEventListener("pointermove", handlePointerMove, { passive: false });
+      window.addEventListener("pointerup", handlePointerEnd);
+      window.addEventListener("pointercancel", handlePointerEnd);
+    },
+    [clearReorderSession]
+  );
+  const addSearchFavorite = useCallback(
+    (asset: MarketAssetSummary) => {
+      const normalized = normalizeFavoriteSymbols([asset.symbol])[0];
+      if (!normalized) {
+        setSearchError(labels.invalidSymbol);
+        return;
+      }
+      if (favoriteSymbolSet.has(normalized)) return;
+      if (symbols.length >= MAX_FAVORITE_SYMBOLS) {
+        setSearchError(labels.watchlistFavoriteLimit);
+        return;
+      }
+
+      writeFavoriteSymbols([normalized, ...symbols]);
+      onSelect(normalized);
+      setSearchInput("");
+      setSearchResults([]);
+      setSearchError(null);
+      setSearchedQuery("");
+    },
+    [
+      favoriteSymbolSet,
+      labels.invalidSymbol,
+      labels.watchlistFavoriteLimit,
+      onSelect,
+      symbols,
+    ]
+  );
+
+  useEffect(() => {
+    symbolsRef.current = symbols;
+  }, [symbols]);
+
+  useEffect(() => {
+    return () => clearReorderSession();
+  }, [clearReorderSession]);
+
+  useEffect(() => {
+    if (!hasSearchQuery) {
+      return;
+    }
+
+    let canceled = false;
+    const timer = window.setTimeout(async () => {
+      setSearchLoading(true);
+      setSearchError(null);
+      try {
+        const response = await api.marketAssetSearch(searchQuery, 8);
+        if (!canceled) {
+          setSearchResults(response.assets);
+          setSearchedQuery(searchQuery);
+        }
+      } catch {
+        if (!canceled) {
+          setSearchResults([]);
+          setSearchError(labels.watchlistSearchFailed);
+          setSearchedQuery(searchQuery);
+        }
+      } finally {
+        if (!canceled) setSearchLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      canceled = true;
+      window.clearTimeout(timer);
+    };
+  }, [hasSearchQuery, labels.watchlistSearchFailed, searchQuery]);
 
   return (
     <>
@@ -644,8 +864,97 @@ function TradingWatchlist({
           )}
         </div>
 
+        <div className="border-b px-3 py-2.5 dark:border-white/10">
+          <label className="grid gap-1.5">
+            <span className="sr-only">{labels.watchlistSearchLabel}</span>
+            <span className="flex h-10 min-w-0 items-center gap-2 rounded-lg border bg-background px-3 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20 dark:border-white/10 dark:bg-white/5">
+              <Search
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground"
+              />
+              <input
+                value={searchInput}
+                onChange={(event) => {
+                  setSearchInput(event.target.value);
+                  setSearchResults([]);
+                  setSearchError(null);
+                  setSearchedQuery("");
+                }}
+                placeholder={labels.watchlistSearchPlaceholder}
+                className="h-full min-w-0 flex-1 bg-transparent font-mono text-sm font-semibold uppercase outline-none placeholder:font-sans placeholder:font-normal placeholder:normal-case placeholder:text-muted-foreground"
+              />
+              {searchLoading && (
+                <Badge variant="outline" className="shrink-0">
+                  {labels.watchlistLoading}
+                </Badge>
+              )}
+            </span>
+          </label>
+
+          {hasSearchQuery &&
+            (searchLoading ||
+              searchError ||
+              searchResults.length > 0 ||
+              searchedQuery === searchQuery) && (
+              <div className="mt-2 overflow-hidden rounded-lg border bg-muted/20 dark:border-white/10 dark:bg-white/5">
+                {searchError ? (
+                  <p className="px-3 py-2 text-xs leading-5 text-red-600">
+                    {searchError}
+                  </p>
+                ) : searchResults.length > 0 ? (
+                  <div className="divide-y dark:divide-white/10">
+                    {searchResults.map((asset) => {
+                      const resultSymbol = asset.symbol.toUpperCase();
+                      const isFavorite = favoriteSymbolSet.has(resultSymbol);
+                      return (
+                        <div
+                          key={resultSymbol}
+                          className="flex min-w-0 items-center gap-2 px-3 py-2"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-mono text-sm font-bold">
+                              {resultSymbol}
+                            </span>
+                            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                              {asset.name}
+                              {asset.exchange ? ` · ${asset.exchange}` : ""}
+                            </span>
+                          </span>
+                          <Button
+                            type="button"
+                            variant={isFavorite ? "secondary" : "outline"}
+                            size="sm"
+                            disabled={isFavorite}
+                            onClick={() => addSearchFavorite(asset)}
+                            className="h-8 shrink-0 px-2.5"
+                            aria-label={`${labels.watchlistAddFavorite}: ${resultSymbol}`}
+                          >
+                            {!isFavorite && <Plus data-icon="inline-start" />}
+                            {isFavorite
+                              ? labels.watchlistFavoriteSaved
+                              : labels.watchlistAddFavorite}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="px-3 py-2 text-xs leading-5 text-muted-foreground">
+                    {labels.watchlistSearchNoResults}
+                  </p>
+                )}
+              </div>
+            )}
+        </div>
+
         {symbols.length > 0 ? (
-          <div className="divide-y dark:divide-white/10">
+          <div
+            ref={listRef}
+            className={[
+              "divide-y dark:divide-white/10",
+              reorderingSymbol ? "select-none" : "",
+            ].join(" ")}
+          >
             {symbols.map((symbol) => (
               <TradingWatchlistRow
                 key={symbol}
@@ -654,8 +963,11 @@ function TradingWatchlist({
                 bars={barsBySymbol.get(symbol) ?? EMPTY_MARKET_BARS}
                 asset={assetBySymbol.get(symbol) ?? null}
                 active={selectedSymbol === symbol}
+                reordering={reorderingSymbol === symbol}
                 locale={locale}
                 onSelect={openDetail}
+                onReorderPointerDown={beginReorderPress}
+                reorderLabel={labels.watchlistReorder}
               />
             ))}
           </div>
@@ -696,39 +1008,85 @@ function TradingWatchlist({
 
 const EMPTY_MARKET_BARS: MarketBar[] = [];
 
+type WatchlistRowRect = {
+  top: number;
+  bottom: number;
+};
+
+type WatchlistReorderSession = {
+  symbol: string;
+  pointerId: number;
+  startY: number;
+  activated: boolean;
+  timerId: number | null;
+  rowRects: WatchlistRowRect[];
+  handlePointerMove: (event: PointerEvent) => void;
+  handlePointerEnd: (event: PointerEvent) => void;
+};
+
 const TradingWatchlistRow = memo(function TradingWatchlistRow({
   symbol,
   snapshot,
   bars,
   asset,
   active,
+  reordering,
   locale,
   onSelect,
+  onReorderPointerDown,
+  reorderLabel,
 }: {
   symbol: string;
   snapshot: MarketSnapshot | null;
   bars: MarketBar[];
   asset: MarketAssetSummary | null;
   active: boolean;
+  reordering: boolean;
   locale: Locale;
   onSelect: (symbol: string) => void;
+  onReorderPointerDown: (
+    symbol: string,
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void;
+  reorderLabel: string;
 }) {
   const price = snapshotDisplayPrice(snapshot);
   const change = priceChange(snapshot, price);
   const securityName = securityNameForSymbol(symbol, asset);
   const handleSelect = useCallback(() => onSelect(symbol), [onSelect, symbol]);
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      onReorderPointerDown(symbol, event);
+    },
+    [onReorderPointerDown, symbol]
+  );
 
   return (
     <button
       type="button"
+      data-watchlist-symbol={symbol}
       aria-pressed={active}
+      aria-grabbed={reordering}
       aria-label={`${symbol} ${securityName}`}
       onClick={handleSelect}
+      onPointerDown={handlePointerDown}
+      onContextMenu={(event) => event.preventDefault()}
       className={[
-        "flex min-h-[4.75rem] w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10",
+        "flex min-h-[4.75rem] w-full touch-pan-y items-center gap-2.5 px-3 py-2.5 text-left transition-[background-color,box-shadow,transform] hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10",
         active ? "bg-muted dark:bg-white/10" : "",
+        reordering
+          ? "relative z-10 cursor-grabbing bg-muted/80 shadow-sm ring-1 ring-ring/30 touch-none dark:bg-white/15"
+          : "cursor-grab",
       ].join(" ")}
     >
+      <GripVertical
+        aria-hidden="true"
+        className={[
+          "size-3.5 shrink-0 text-muted-foreground transition-opacity",
+          reordering ? "opacity-100" : "opacity-35",
+        ].join(" ")}
+      />
+      <span className="sr-only">{`${reorderLabel}: ${symbol}`}</span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-mono text-lg font-bold leading-6 tracking-normal text-foreground dark:text-white">
           {symbol}
@@ -777,7 +1135,7 @@ const StockDetailDialogContent = memo(function StockDetailDialogContent({
     change == null ? undefined : change.absolute >= 0 ? "positive" : "negative";
 
   return (
-    <DialogContent className="grid max-h-[min(42rem,calc(100dvh-1rem))] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-xl">
+    <DialogContent className="grid max-h-[min(42rem,calc(100dvh-1rem))] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0 sm:max-w-2xl">
       <DialogHeader className="border-b px-4 py-4 pr-12">
         <DialogTitle className="grid gap-3 pr-4 leading-tight sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
           <span className="min-w-0">
@@ -798,17 +1156,26 @@ const StockDetailDialogContent = memo(function StockDetailDialogContent({
         </DialogTitle>
       </DialogHeader>
 
-      <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3">
-        <section className="rounded-lg border bg-muted/20 p-3">
+      <div className="min-h-0 overflow-y-auto overscroll-contain px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 sm:px-4">
+        <section className="rounded-lg border bg-muted/20 p-2">
           <DetailSparkline
             bars={bars}
             latestTradePrice={snapshot?.latest_trade_price ?? null}
             latestTradeTimestamp={snapshot?.latest_trade_timestamp ?? null}
+            openingPrice={snapshot?.day_open ?? null}
             change={change}
             locale={locale}
             emptyLabel={labels.detailNoData}
+            openingLabel={labels.detailOpen}
           />
         </section>
+
+        <QuickBuyPanel
+          symbol={symbol}
+          price={price}
+          locale={locale}
+          labels={labels}
+        />
 
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <DetailMetric
@@ -871,6 +1238,136 @@ const StockDetailDialogContent = memo(function StockDetailDialogContent({
   );
 });
 
+function QuickBuyPanel({
+  symbol,
+  price,
+  locale,
+  labels,
+}: {
+  symbol: string;
+  price: number | null;
+  locale: Locale;
+  labels: TradingWatchlistLabels;
+}) {
+  const router = useRouter();
+  const [qty, setQty] = useState("1");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submittedOrder, setSubmittedOrder] = useState<Order | null>(null);
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const numericQty = Number(qty);
+  const referencePrice = positiveNumber(price);
+  const estimatedNotional =
+    referencePrice != null && Number.isFinite(numericQty) && numericQty > 0
+      ? referencePrice * numericQty
+      : null;
+
+  async function submitQuickBuy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateOrder(
+      normalizedSymbol,
+      numericQty,
+      "market",
+      0,
+      false,
+      labels
+    );
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSubmittedOrder(null);
+    try {
+      const order = await api.createOrder({
+        symbol: normalizedSymbol,
+        side: "buy",
+        qty: numericQty,
+        order_type: "market",
+        limit_price: null,
+        extended_hours: false,
+      });
+      setSubmittedOrder(order);
+      router.refresh();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : labels.orderFailed);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submitQuickBuy}
+      className="mt-3 rounded-lg border bg-background px-3 py-3"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">
+            {labels.buy} {normalizedSymbol}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{labels.market}</p>
+        </div>
+        <Badge variant="outline" className="shrink-0">
+          {labels.market}
+        </Badge>
+      </div>
+
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+        <Field label={labels.quantity}>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={qty}
+            onChange={(event) => {
+              setQty(event.target.value);
+              setError(null);
+              setSubmittedOrder(null);
+            }}
+            className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
+          />
+        </Field>
+        <Button type="submit" disabled={loading} className="h-10 min-w-20">
+          <Send data-icon="inline-start" />
+          {loading ? labels.submitting : labels.buy}
+        </Button>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+        <span className="text-muted-foreground">{labels.estimatedNotional}</span>
+        <span className="font-mono font-semibold tabular-nums">
+          {estimatedNotional != null
+            ? formatCurrency(estimatedNotional, locale)
+            : "--"}
+        </span>
+      </div>
+
+      {error && (
+        <p className="mt-2 text-xs leading-5 text-red-600" role="alert">
+          {error}
+        </p>
+      )}
+
+      {submittedOrder && (
+        <div className="mt-2 rounded-md border bg-muted/20 px-2.5 py-2 text-xs">
+          <div className="flex items-center gap-2 font-medium">
+            <CircleCheck aria-hidden="true" className="size-3.5" />
+            <span>{labels.submittedTitle}</span>
+          </div>
+          <p className="mt-1 text-muted-foreground">
+            {submittedOrder.symbol} · {orderSideLabel(submittedOrder.side, locale)} ·{" "}
+            {orderTypeLabel(submittedOrder.order_type, locale)} ·{" "}
+            {orderStatusLabel(submittedOrder.status, locale)}
+          </p>
+        </div>
+      )}
+    </form>
+  );
+}
+
 function DetailMetric({
   label,
   value,
@@ -907,22 +1404,34 @@ const DetailSparkline = memo(function DetailSparkline({
   bars,
   latestTradePrice,
   latestTradeTimestamp,
+  openingPrice,
   change,
   locale,
   emptyLabel,
+  openingLabel,
 }: {
   bars: MarketBar[];
   latestTradePrice: number | null;
   latestTradeTimestamp: string | null;
+  openingPrice: number | null;
   change: PriceChange | null;
   locale: Locale;
   emptyLabel: string;
+  openingLabel: string;
 }) {
+  const geometry = DETAIL_SPARKLINE_GEOMETRY;
   const rawAreaGradientId = useId();
   const areaGradientId = `detail-area-gradient-${rawAreaGradientId.replace(/:/g, "")}`;
   const paths = useMemo(
-    () => buildSparklinePaths(bars, latestTradePrice, latestTradeTimestamp),
-    [bars, latestTradePrice, latestTradeTimestamp]
+    () =>
+      buildSparklinePaths(
+        bars,
+        latestTradePrice,
+        latestTradeTimestamp,
+        geometry,
+        openingPrice
+      ),
+    [bars, latestTradePrice, latestTradeTimestamp, geometry, openingPrice]
   );
   const [hoverPoint, setHoverPoint] = useState<SparklinePlotPoint | null>(null);
   const tone =
@@ -938,30 +1447,37 @@ const DetailSparkline = memo(function DetailSparkline({
   const tooltipClass =
     hoverPoint == null
       ? ""
-      : hoverPoint.x < SPARKLINE_WIDTH * 0.28
+      : hoverPoint.x < geometry.width * 0.28
         ? "translate-x-0"
-        : hoverPoint.x > SPARKLINE_WIDTH * 0.72
+        : hoverPoint.x > geometry.width * 0.72
           ? "-translate-x-full"
           : "-translate-x-1/2";
   const tooltipLeft = hoverPoint
-    ? `${(hoverPoint.x / SPARKLINE_WIDTH) * 100}%`
+    ? `${(hoverPoint.x / geometry.width) * 100}%`
     : undefined;
   const tooltipTop = hoverPoint
     ? `${Math.max(
         8,
-        Math.min(72, (hoverPoint.y / SPARKLINE_HEIGHT) * 100)
+        Math.min(72, (hoverPoint.y / geometry.height) * 100)
       )}%`
     : undefined;
+  const openingGuideTop =
+    paths?.openingPriceY != null
+      ? `${Math.max(
+          8,
+          Math.min(90, (paths.openingPriceY / geometry.height) * 100)
+        )}%`
+      : undefined;
   const handlePointerMove = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
+    (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!paths) return;
       const rect = event.currentTarget.getBoundingClientRect();
       if (rect.width <= 0) return;
       const chartX =
-        ((event.clientX - rect.left) / rect.width) * SPARKLINE_WIDTH;
+        ((event.clientX - rect.left) / rect.width) * geometry.width;
       setHoverPoint(nearestSparklinePoint(paths.points, chartX));
     },
-    [paths]
+    [paths, geometry]
   );
   const clearHoverPoint = useCallback(() => setHoverPoint(null), []);
 
@@ -979,7 +1495,7 @@ const DetailSparkline = memo(function DetailSparkline({
       )}
 
       <div
-        className={`grid h-36 w-full grid-cols-[minmax(0,1fr)_3.9rem] gap-2 ${tone}`}
+        className={`grid h-44 w-full grid-cols-[minmax(0,1fr)_3.15rem] gap-1.5 sm:h-48 ${tone}`}
       >
         <div
           className="relative min-w-0 rounded-md bg-background/35"
@@ -990,7 +1506,7 @@ const DetailSparkline = memo(function DetailSparkline({
           aria-label="Intraday price chart"
         >
           <svg
-            viewBox={`0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`}
+            viewBox={`0 0 ${geometry.width} ${geometry.height}`}
             preserveAspectRatio="none"
             className="h-full w-full overflow-visible"
             aria-hidden="true"
@@ -1000,18 +1516,35 @@ const DetailSparkline = memo(function DetailSparkline({
                 id={areaGradientId}
                 x1="0"
                 x2="0"
-                y1={SPARKLINE_PADDING}
-                y2={SPARKLINE_HEIGHT}
+                y1={geometry.paddingTop}
+                y2={geometry.height}
                 gradientUnits="userSpaceOnUse"
               >
-                <stop offset="0%" stopColor="currentColor" stopOpacity="0.34" />
-                <stop offset="48%" stopColor="currentColor" stopOpacity="0.16" />
-                <stop offset="100%" stopColor="currentColor" stopOpacity="0.02" />
+                <stop offset="0%" stopColor="currentColor" stopOpacity="0.4" />
+                <stop offset="54%" stopColor="currentColor" stopOpacity="0.2" />
+                <stop offset="100%" stopColor="currentColor" stopOpacity="0.04" />
               </linearGradient>
             </defs>
             {paths ? (
               <>
                 <path d={paths.area} fill={`url(#${areaGradientId})`} />
+                {paths.openingPriceY != null && (
+                  <path
+                    className="text-muted-foreground"
+                    d={`M ${geometry.paddingX} ${formatSparklineNumber(
+                      paths.openingPriceY
+                    )} L ${geometry.width - geometry.paddingX} ${formatSparklineNumber(
+                      paths.openingPriceY
+                    )}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeDasharray="3 4"
+                    strokeLinecap="round"
+                    strokeWidth="1.2"
+                    opacity="0.58"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )}
                 <path
                   d={paths.line}
                   fill="none"
@@ -1024,9 +1557,9 @@ const DetailSparkline = memo(function DetailSparkline({
               </>
             ) : (
               <path
-                d={`M ${SPARKLINE_PADDING} ${SPARKLINE_HEIGHT / 2} L ${
-                  SPARKLINE_WIDTH - SPARKLINE_PADDING
-                } ${SPARKLINE_HEIGHT / 2}`}
+                d={`M ${geometry.paddingX} ${geometry.height / 2} L ${
+                  geometry.width - geometry.paddingX
+                } ${geometry.height / 2}`}
                 fill="none"
                 stroke="currentColor"
                 strokeDasharray="4 5"
@@ -1037,6 +1570,15 @@ const DetailSparkline = memo(function DetailSparkline({
               />
             )}
           </svg>
+          {paths?.openingPriceY != null && paths.openingPrice != null && (
+            <span
+              className="pointer-events-none absolute right-1 max-w-[45%] -translate-y-1/2 rounded-sm bg-background/80 px-1 py-0.5 text-right font-mono text-[9px] leading-none text-muted-foreground shadow-sm backdrop-blur-sm"
+              style={{ top: openingGuideTop }}
+              aria-hidden="true"
+            >
+              {openingLabel} {formatCompactPrice(paths.openingPrice, locale)}
+            </span>
+          )}
           {hoverPoint && (
             <>
               <span
@@ -1047,8 +1589,8 @@ const DetailSparkline = memo(function DetailSparkline({
               <span
                 className="pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ring-2 ring-background"
                 style={{
-                  left: `${(hoverPoint.x / SPARKLINE_WIDTH) * 100}%`,
-                  top: `${(hoverPoint.y / SPARKLINE_HEIGHT) * 100}%`,
+                  left: `${(hoverPoint.x / geometry.width) * 100}%`,
+                  top: `${(hoverPoint.y / geometry.height) * 100}%`,
                 }}
                 aria-hidden="true"
               />
@@ -1083,7 +1625,7 @@ const DetailSparkline = memo(function DetailSparkline({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 pr-[4.4rem] font-mono text-[10px] leading-none text-muted-foreground">
+      <div className="grid grid-cols-3 gap-2 pr-[3.75rem] font-mono text-[10px] leading-none text-muted-foreground">
         <span className="truncate">
           {paths ? formatChartTimeLabel(paths.firstTimestamp, locale) : "--"}
         </span>
@@ -1109,14 +1651,21 @@ const WatchlistSparkline = memo(function WatchlistSparkline({
   latestTradeTimestamp: string | null;
   change: PriceChange | null;
 }) {
+  const geometry = WATCHLIST_SPARKLINE_GEOMETRY;
   const rawAreaGradientId = useId();
   const areaGradientId = `watchlist-area-gradient-${rawAreaGradientId.replace(
     /:/g,
     ""
   )}`;
   const paths = useMemo(
-    () => buildSparklinePaths(bars, latestTradePrice, latestTradeTimestamp),
-    [bars, latestTradePrice, latestTradeTimestamp]
+    () =>
+      buildSparklinePaths(
+        bars,
+        latestTradePrice,
+        latestTradeTimestamp,
+        geometry
+      ),
+    [bars, latestTradePrice, latestTradeTimestamp, geometry]
   );
   const tone =
     change == null
@@ -1128,7 +1677,7 @@ const WatchlistSparkline = memo(function WatchlistSparkline({
   return (
     <span className={`h-11 w-[5.75rem] shrink-0 sm:w-[7.5rem] ${tone}`} aria-hidden="true">
       <svg
-        viewBox={`0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`}
+        viewBox={`0 0 ${geometry.width} ${geometry.height}`}
         preserveAspectRatio="none"
         className="h-full w-full overflow-visible"
       >
@@ -1137,8 +1686,8 @@ const WatchlistSparkline = memo(function WatchlistSparkline({
             id={areaGradientId}
             x1="0"
             x2="0"
-            y1={SPARKLINE_PADDING}
-            y2={SPARKLINE_HEIGHT}
+            y1={geometry.paddingTop}
+            y2={geometry.height}
             gradientUnits="userSpaceOnUse"
           >
             <stop offset="0%" stopColor="currentColor" stopOpacity="0.32" />
@@ -1161,9 +1710,9 @@ const WatchlistSparkline = memo(function WatchlistSparkline({
           </>
         ) : (
           <path
-            d={`M ${SPARKLINE_PADDING} ${SPARKLINE_HEIGHT / 2} L ${
-              SPARKLINE_WIDTH - SPARKLINE_PADDING
-            } ${SPARKLINE_HEIGHT / 2}`}
+            d={`M ${geometry.paddingX} ${geometry.height / 2} L ${
+              geometry.width - geometry.paddingX
+            } ${geometry.height / 2}`}
             fill="none"
             stroke="currentColor"
             strokeDasharray="4 5"
@@ -1239,6 +1788,8 @@ type SparklinePaths = {
   area: string;
   min: number;
   max: number;
+  openingPrice: number | null;
+  openingPriceY: number | null;
   firstTimestamp: string;
   midTimestamp: string;
   lastTimestamp: string;
@@ -1254,6 +1805,15 @@ type SparklinePoint = {
 type SparklinePlotPoint = SparklinePoint & {
   x: number;
   y: number;
+};
+
+type SparklineGeometry = {
+  width: number;
+  height: number;
+  paddingX: number;
+  paddingTop: number;
+  paddingBottom: number;
+  maxPoints: number;
 };
 
 type MarketTimeParts = {
@@ -1273,7 +1833,9 @@ type MarketSessionDomain = {
 function buildSparklinePaths(
   bars: MarketBar[],
   latestTradePrice: number | null = null,
-  latestTradeTimestamp: string | null = null
+  latestTradeTimestamp: string | null = null,
+  geometry: SparklineGeometry = WATCHLIST_SPARKLINE_GEOMETRY,
+  openingGuidePrice: number | null = null
 ): SparklinePaths | null {
   let points: SparklinePoint[] = [];
   for (const bar of bars) {
@@ -1306,14 +1868,24 @@ function buildSparklinePaths(
   });
   if (points.length < 2) return null;
 
+  const openingPrice =
+    positiveNumber(openingGuidePrice) ??
+    openingPriceFromBars(bars, latestMarketDate, sessionDomain);
+
   const sampledPoints =
-    points.length > SPARKLINE_MAX_POINTS ? sampleSparklinePoints(points) : points;
+    points.length > geometry.maxPoints
+      ? sampleSparklinePoints(points, geometry.maxPoints)
+      : points;
 
   let min = sampledPoints[0].value;
   let max = sampledPoints[0].value;
   for (const point of sampledPoints) {
     if (point.value < min) min = point.value;
     if (point.value > max) max = point.value;
+  }
+  if (openingPrice != null) {
+    if (openingPrice < min) min = openingPrice;
+    if (openingPrice > max) max = openingPrice;
   }
 
   let plotMin = min;
@@ -1324,9 +1896,9 @@ function buildSparklinePaths(
     plotMax += padding;
   }
 
-  const plotWidth = SPARKLINE_WIDTH - SPARKLINE_PADDING * 2;
-  const plotHeight = SPARKLINE_HEIGHT - SPARKLINE_PADDING * 2;
-  const bottom = SPARKLINE_HEIGHT - SPARKLINE_PADDING;
+  const plotWidth = geometry.width - geometry.paddingX * 2;
+  const plotHeight = geometry.height - geometry.paddingTop - geometry.paddingBottom;
+  const bottom = geometry.height - geometry.paddingBottom;
   const sessionDuration = sessionDomain.endMs - sessionDomain.startMs;
   const pathParts: string[] = [];
   const plotPoints: SparklinePlotPoint[] = [];
@@ -1340,9 +1912,9 @@ function buildSparklinePaths(
           sessionDuration
         : 0;
     const x =
-      SPARKLINE_PADDING + plotWidth * clampNumber(sessionProgress, 0, 1);
+      geometry.paddingX + plotWidth * clampNumber(sessionProgress, 0, 1);
     const y =
-      SPARKLINE_PADDING +
+      geometry.paddingTop +
       plotHeight -
       ((sampledPoint.value - plotMin) / (plotMax - plotMin)) * plotHeight;
     const pathPoint = `${index === 0 ? "M" : "L"} ${formatSparklineNumber(
@@ -1360,6 +1932,12 @@ function buildSparklinePaths(
 
   const line = pathParts.join(" ");
   const latestPoint = points[points.length - 1];
+  const openingPriceY =
+    openingPrice != null
+      ? geometry.paddingTop +
+        plotHeight -
+        ((openingPrice - plotMin) / (plotMax - plotMin)) * plotHeight
+      : null;
   return {
     line,
     area: `${line} L ${lastX} ${formatSparklineNumber(bottom)} L ${firstX} ${formatSparklineNumber(
@@ -1367,6 +1945,8 @@ function buildSparklinePaths(
     )} Z`,
     min,
     max,
+    openingPrice,
+    openingPriceY,
     firstTimestamp: new Date(sessionDomain.startMs).toISOString(),
     midTimestamp: new Date(sessionDomain.midMs).toISOString(),
     lastTimestamp: new Date(sessionDomain.endMs).toISOString(),
@@ -1408,12 +1988,33 @@ function mergeLatestTradePoint(
   return nextPoints;
 }
 
-function sampleSparklinePoints(points: SparklinePoint[]): SparklinePoint[] {
+function openingPriceFromBars(
+  bars: MarketBar[],
+  marketDate: string | null,
+  sessionDomain: MarketSessionDomain
+): number | null {
+  let openingBar: MarketBar | null = null;
+  for (const bar of bars) {
+    if (marketDate && marketDateKey(bar.timestamp) !== marketDate) continue;
+    const timeMs = chartTimeMs(bar.timestamp);
+    if (timeMs < sessionDomain.startMs || timeMs > sessionDomain.endMs) continue;
+    if (!openingBar || timeMs < chartTimeMs(openingBar.timestamp)) {
+      openingBar = bar;
+    }
+  }
+
+  return positiveNumber(openingBar?.open) ?? positiveNumber(openingBar?.close);
+}
+
+function sampleSparklinePoints(
+  points: SparklinePoint[],
+  maxPoints: number
+): SparklinePoint[] {
   const out: SparklinePoint[] = [];
-  const step = (points.length - 1) / (SPARKLINE_MAX_POINTS - 1);
-  for (let index = 0; index < SPARKLINE_MAX_POINTS; index += 1) {
+  const step = (points.length - 1) / (maxPoints - 1);
+  for (let index = 0; index < maxPoints; index += 1) {
     const sourceIndex =
-      index === SPARKLINE_MAX_POINTS - 1
+      index === maxPoints - 1
         ? points.length - 1
         : Math.round(index * step);
     out.push(points[sourceIndex]);
@@ -1695,6 +2296,46 @@ function normalizeFavoriteSymbols(symbols: string[]) {
     out.push(symbol);
   }
   return out.slice(0, MAX_FAVORITE_SYMBOLS);
+}
+
+function writeFavoriteSymbols(symbols: string[]) {
+  if (typeof window === "undefined") return;
+
+  const normalized = normalizeFavoriteSymbols(symbols);
+  window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(normalized));
+  window.dispatchEvent(new Event(FAVORITES_CHANGED_EVENT));
+}
+
+function measureWatchlistRows(container: HTMLDivElement | null): WatchlistRowRect[] {
+  if (!container) return [];
+  return Array.from(
+    container.querySelectorAll<HTMLButtonElement>("[data-watchlist-symbol]")
+  ).map((row) => {
+    const rect = row.getBoundingClientRect();
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+    };
+  });
+}
+
+function watchlistIndexForClientY(clientY: number, rowRects: WatchlistRowRect[]) {
+  if (rowRects.length === 0) return -1;
+  for (let index = 0; index < rowRects.length; index += 1) {
+    const rect = rowRects[index];
+    if (clientY < rect.top + (rect.bottom - rect.top) / 2) {
+      return index;
+    }
+  }
+  return rowRects.length - 1;
+}
+
+function moveSymbol(symbols: string[], fromIndex: number, toIndex: number) {
+  if (fromIndex === toIndex) return symbols;
+  const next = [...symbols];
+  const [symbol] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, symbol);
+  return next;
 }
 
 function validateOrder(

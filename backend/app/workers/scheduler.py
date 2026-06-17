@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.db.session import SessionLocal
 from app.models.strategy import StrategyInstance
-from app.services.market_data_ingestion import create_daily_sync_job
+from app.services.market_data_ingestion import create_daily_sync_job, refresh_market_assets
 from app.workers.jobs.run_strategy import run_strategy_instance
 from app.workers.queue import enqueue_market_data_ingestion
 
@@ -71,6 +71,7 @@ def _reconcile_strategies(scheduler: BlockingScheduler) -> None:
 def _enqueue_daily_market_data_sync() -> None:
     db = SessionLocal()
     try:
+        _refresh_assets_for_daily_sync(db)
         job = create_daily_sync_job(db)
         if job.rq_job_id:
             logger.info("Market-data sync job %s is already queued as %s", job.id, job.rq_job_id)
@@ -82,6 +83,19 @@ def _enqueue_daily_market_data_sync() -> None:
         logger.exception("Could not queue daily market-data sync")
     finally:
         db.close()
+
+
+def _refresh_assets_for_daily_sync(db) -> None:  # noqa: ANN001
+    try:
+        result = refresh_market_assets(db)
+        logger.info(
+            "Refreshed %s market assets before daily sync",
+            result.get("refreshed", 0),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Could not refresh market assets before daily sync; continuing with existing assets"
+        )
 
 
 def build_scheduler() -> BlockingScheduler:

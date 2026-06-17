@@ -348,6 +348,42 @@ def test_market_assets_summary_api() -> None:
         _clear_overrides()
 
 
+def test_market_assets_search_api() -> None:
+    Session = _session_factory()
+    _install_overrides(Session)
+    client = TestClient(app)
+
+    try:
+        with Session() as db:
+            db.add(_asset("AAPL", name="Apple Inc."))
+            db.add(_asset("APP", name="AppLovin Corporation"))
+            db.add(_asset("MSFT", name="Microsoft Corporation"))
+            db.add(_asset("NVDA", name="NVIDIA Corporation"))
+            db.add(_asset("TSLA", name="Tesla, Inc."))
+            db.add(_asset("AMZN", name="Amazon.com, Inc."))
+            db.add(_asset("PAPL", name="Pineapple Holdings"))
+            db.add(_asset("XOLD", name="Apple Inactive", status="inactive"))
+            db.add(_asset("XNTR", name="Apple Non Tradable", tradable=False))
+            db.commit()
+
+        app_response = client.get("/api/v1/market/assets/search?q=app")
+        assert app_response.status_code == 200
+        app_assets = app_response.json()["assets"]
+        assert [asset["symbol"] for asset in app_assets[:3]] == ["APP", "AAPL", "PAPL"]
+        assert "XOLD" not in {asset["symbol"] for asset in app_assets}
+        assert "XNTR" not in {asset["symbol"] for asset in app_assets}
+
+        apple_response = client.get("/api/v1/market/assets/search?q=apple")
+        assert apple_response.status_code == 200
+        assert apple_response.json()["assets"][0]["symbol"] == "AAPL"
+
+        limited_response = client.get("/api/v1/market/assets/search?q=a&limit=2")
+        assert limited_response.status_code == 200
+        assert len(limited_response.json()["assets"]) == 2
+    finally:
+        _clear_overrides()
+
+
 def _session_factory():
     engine = create_engine(
         "sqlite://",
@@ -375,15 +411,21 @@ def _clear_overrides() -> None:
     app.dependency_overrides.pop(get_current_user_id, None)
 
 
-def _asset(symbol: str, name: str | None = None) -> MarketAsset:
+def _asset(
+    symbol: str,
+    name: str | None = None,
+    *,
+    status: str = "active",
+    tradable: bool = True,
+) -> MarketAsset:
     return MarketAsset(
         symbol=symbol,
         asset_id=f"{symbol}-id",
         name=name or symbol,
         asset_class="us_equity",
         exchange="NASDAQ",
-        status="active",
-        tradable=True,
+        status=status,
+        tradable=tradable,
         marginable=True,
         shortable=True,
         easy_to_borrow=True,

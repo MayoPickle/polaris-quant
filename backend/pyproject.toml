@@ -15,6 +15,7 @@ dependencies = [
     "passlib[bcrypt]>=1.7",           # password hashing
     "cryptography>=44.0",             # Fernet encryption for broker tokens
     "apscheduler>=3.11",              # background scheduler
+    "tzlocal>=5.2,<5.4",              # timezone lookup used by APScheduler
     "alpaca-py>=0.33",                # Alpaca broker SDK
     "httpx>=0.28",
     "redis>=5.2",

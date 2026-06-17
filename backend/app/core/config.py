@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     MARKET_DATA_SYMBOLS_PER_REQUEST: int = 25
     MARKET_DATA_DISABLE_BAR_COUNT_SUMMARY: bool = True
     MARKET_DATA_COVERAGE_RECONCILE_BATCH_SYMBOLS: int = 50
+    MARKET_DATA_STALE_JOB_SECONDS: int = 15 * 60
 
     # ---- Scheduler / market hours ----
     SCHEDULER_TIMEZONE: str = "America/New_York"

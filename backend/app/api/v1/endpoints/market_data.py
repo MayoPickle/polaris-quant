@@ -25,6 +25,8 @@ from app.services.market_data_control import (
     pause_ingestion_job,
     prepare_resume_ingestion_job,
     reconcile_market_data_coverage,
+    reconcile_stale_ingestion_job,
+    reconcile_stale_ingestion_jobs,
 )
 from app.services.market_data_ingestion import create_ingestion_job, refresh_market_assets
 from app.workers.queue import enqueue_market_data_ingestion
@@ -54,12 +56,13 @@ def list_market_data_ingestion_jobs(
         query = query.filter(MarketDataIngestionJob.kind == kind)
     if status:
         query = query.filter(MarketDataIngestionJob.status == status)
-    return (
+    jobs = (
         query.order_by(MarketDataIngestionJob.created_at.desc(), MarketDataIngestionJob.id.desc())
         .offset(offset)
         .limit(limit)
         .all()
     )
+    return reconcile_stale_ingestion_jobs(db, jobs)
 
 
 @router.post(
@@ -97,11 +100,12 @@ def create_market_data_ingestion_job(
 def latest_market_data_ingestion_job(
     db: Session = Depends(get_db),
 ) -> MarketDataIngestionJob | None:
-    return (
+    job = (
         db.query(MarketDataIngestionJob)
         .order_by(MarketDataIngestionJob.created_at.desc(), MarketDataIngestionJob.id.desc())
         .first()
     )
+    return reconcile_stale_ingestion_job(db, job) if job is not None else None
 
 
 @router.get(

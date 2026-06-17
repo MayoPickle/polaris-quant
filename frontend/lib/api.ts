@@ -246,6 +246,18 @@ export function createApiClient(headerProvider?: HeaderProvider) {
         headerProvider
       );
     },
+    marketAssetSearch: (query: string, limit = 8) => {
+      const params = new URLSearchParams({
+        q: query,
+        limit: String(limit),
+      });
+      return request<MarketAssetsResponse>(
+        `/market/assets/search?${params}`,
+        undefined,
+        undefined,
+        headerProvider
+      );
+    },
     marketClock: () => request<MarketClock>("/market/clock", undefined, undefined, headerProvider),
 
     // Market data ingestion

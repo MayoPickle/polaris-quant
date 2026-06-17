@@ -10,8 +10,10 @@ from sqlalchemy.pool import StaticPool
 from app.db.base_all import Base
 from app.models.market_data import MarketAsset, MarketBar, MarketDataCoverage, MarketDataIngestionJob
 from app.schemas.market_data import MarketDataIngestionJobCreate
+from app.services import market_data_control as control_module
 from app.services import market_data_ingestion as ingestion_module
 from app.services.market_data_cache import MarketDataCacheService, MarketDataMissingError
+from app.services.market_data_control import reconcile_stale_ingestion_job
 from app.services.market_data_ingestion import (
     create_ingestion_job,
     refresh_market_assets,
@@ -384,6 +386,164 @@ def test_market_data_ingestion_skips_invalid_provider_symbols(monkeypatch) -> No
         assert completed.progress_state["skipped_symbols"] == ["0029900E0"]
         assert db.query(MarketBar).count() == 2
         assert provider.calls == [["AAPL", "0029900E0", "MSFT"], ["AAPL", "MSFT"]]
+
+
+def test_reconcile_stale_pausing_market_data_job_marks_paused(monkeypatch) -> None:
+    Session = _session_factory()
+    stale_time = datetime.now(timezone.utc) - timedelta(hours=1)
+    discarded: list[str | None] = []
+
+    monkeypatch.setattr(control_module.settings, "MARKET_DATA_STALE_JOB_SECONDS", 60)
+    monkeypatch.setattr(control_module, "_rq_job_is_waiting_or_active", lambda job: False)
+    monkeypatch.setattr(
+        control_module,
+        "_discard_rq_job_state",
+        lambda job: discarded.append(job.rq_job_id),
+    )
+
+    with Session() as db:
+        job = MarketDataIngestionJob(
+            id="stale-pausing",
+            kind="backfill",
+            provider="alpaca",
+            feed="sip",
+            timeframe="1Day",
+            adjustment="split",
+            symbols=["AAPL"],
+            start_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            end_ts=datetime(2026, 1, 3, tzinfo=timezone.utc),
+            status="pausing",
+            total_symbols=1,
+            total_work_units=2,
+            completed_work_units=1,
+            pause_requested=True,
+            progress_state={},
+            current_symbol="AAPL",
+            rq_job_id="rq-stale-pausing",
+            updated_at=stale_time,
+        )
+        db.add(job)
+        db.commit()
+
+    with Session() as db:
+        job = db.get(MarketDataIngestionJob, "stale-pausing")
+        assert job is not None
+        reconciled = reconcile_stale_ingestion_job(db, job)
+
+        assert reconciled.status == "paused"
+        assert reconciled.pause_requested is True
+        assert reconciled.current_symbol is None
+        assert reconciled.rq_job_id is None
+        assert reconciled.ended_at is not None
+        assert "paused automatically" in (reconciled.error or "")
+        assert reconciled.progress_state["stale_recovery"]["from_status"] == "pausing"
+        assert discarded == ["rq-stale-pausing"]
+
+
+def test_reconcile_stale_cancelling_market_data_job_marks_cancelled(monkeypatch) -> None:
+    Session = _session_factory()
+    stale_time = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    monkeypatch.setattr(control_module.settings, "MARKET_DATA_STALE_JOB_SECONDS", 60)
+    monkeypatch.setattr(control_module, "_rq_job_is_waiting_or_active", lambda job: False)
+    monkeypatch.setattr(control_module, "_discard_rq_job_state", lambda job: None)
+
+    with Session() as db:
+        job = MarketDataIngestionJob(
+            id="stale-cancelling",
+            kind="backfill",
+            provider="alpaca",
+            feed="sip",
+            timeframe="1Day",
+            adjustment="split",
+            symbols=["AAPL"],
+            start_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            end_ts=datetime(2026, 1, 3, tzinfo=timezone.utc),
+            status="cancelling",
+            total_symbols=1,
+            total_work_units=2,
+            pause_requested=False,
+            progress_state={},
+            current_symbol="AAPL",
+            rq_job_id="rq-stale-cancelling",
+            updated_at=stale_time,
+        )
+        db.add(job)
+        db.commit()
+
+    with Session() as db:
+        job = db.get(MarketDataIngestionJob, "stale-cancelling")
+        assert job is not None
+        reconciled = reconcile_stale_ingestion_job(db, job)
+
+        assert reconciled.status == "cancelled"
+        assert reconciled.pause_requested is False
+        assert reconciled.current_symbol is None
+        assert reconciled.rq_job_id is None
+        assert reconciled.ended_at is not None
+        assert reconciled.progress_state["stale_recovery"]["from_status"] == "cancelling"
+
+
+def test_reconcile_recent_market_data_job_leaves_it_active(monkeypatch) -> None:
+    Session = _session_factory()
+
+    monkeypatch.setattr(control_module.settings, "MARKET_DATA_STALE_JOB_SECONDS", 3600)
+    monkeypatch.setattr(
+        control_module,
+        "_rq_job_is_waiting_or_active",
+        lambda job: pytest.fail("recent jobs should not ask RQ for recovery"),
+    )
+
+    with Session() as db:
+        job = MarketDataIngestionJob(
+            id="recent-running",
+            kind="backfill",
+            provider="alpaca",
+            feed="sip",
+            timeframe="1Day",
+            adjustment="split",
+            symbols=["AAPL"],
+            start_ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            end_ts=datetime(2026, 1, 3, tzinfo=timezone.utc),
+            status="running",
+            total_symbols=1,
+            total_work_units=2,
+            pause_requested=False,
+            progress_state={},
+        )
+        db.add(job)
+        db.commit()
+
+        reconciled = reconcile_stale_ingestion_job(db, job)
+        assert reconciled.status == "running"
+
+
+def test_rq_started_job_requires_fresh_worker_heartbeat(monkeypatch) -> None:
+    class FakeWorker:
+        def __init__(self, job_id: str, heartbeat: datetime) -> None:
+            self.last_heartbeat = heartbeat
+            self._job_id = job_id
+
+        def get_current_job_id(self) -> str:
+            return self._job_id
+
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(control_module.settings, "MARKET_DATA_STALE_JOB_SECONDS", 60)
+    monkeypatch.setattr(
+        control_module.Worker,
+        "all",
+        lambda queue: [FakeWorker("rq-live", now - timedelta(seconds=30))],
+    )
+
+    assert control_module._rq_job_has_live_worker(object(), "rq-live") is True
+
+    monkeypatch.setattr(
+        control_module.Worker,
+        "all",
+        lambda queue: [FakeWorker("rq-stale", now - timedelta(minutes=5))],
+    )
+
+    assert control_module._rq_job_has_live_worker(object(), "rq-stale") is False
 
 
 def _session_factory():

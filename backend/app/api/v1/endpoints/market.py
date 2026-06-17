@@ -8,6 +8,7 @@ import math
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_broker_client
@@ -28,6 +29,8 @@ router = APIRouter()
 
 _SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 _MAX_SNAPSHOT_SYMBOLS = 20
+_DEFAULT_ASSET_SEARCH_LIMIT = 8
+_MAX_ASSET_SEARCH_LIMIT = 20
 _DELAYED_DATA_MINUTES = 20
 _MINUTE_RANGE_DAYS = 1
 _HOURLY_RANGE_DAYS = 7
@@ -109,6 +112,57 @@ def get_snapshots(
     )
 
 
+@router.get("/assets/search", response_model=MarketAssetsRead)
+def search_market_assets(
+    q: str = Query(..., min_length=1),
+    limit: int = Query(_DEFAULT_ASSET_SEARCH_LIMIT, ge=1, le=_MAX_ASSET_SEARCH_LIMIT),
+    db: Session = Depends(get_db),
+) -> MarketAssetsRead:
+    term = q.strip()
+    if not term:
+        return MarketAssetsRead(assets=[])
+
+    normalized = term.upper()
+    escaped = _escape_like(normalized)
+    prefix_pattern = f"{escaped}%"
+    contains_pattern = f"%{escaped}%"
+    symbol = func.upper(MarketAsset.symbol)
+    name = func.upper(MarketAsset.name)
+    match_rank = case(
+        (symbol == normalized, 0),
+        (symbol.like(prefix_pattern, escape="\\"), 1),
+        (name.like(prefix_pattern, escape="\\"), 2),
+        (name.like(contains_pattern, escape="\\"), 3),
+        else_=4,
+    )
+
+    rows = (
+        db.query(MarketAsset)
+        .filter(
+            MarketAsset.status == "active",
+            MarketAsset.tradable.is_(True),
+            or_(
+                symbol.like(prefix_pattern, escape="\\"),
+                name.like(contains_pattern, escape="\\"),
+            ),
+        )
+        .order_by(match_rank.asc(), MarketAsset.symbol.asc())
+        .limit(limit)
+        .all()
+    )
+    return MarketAssetsRead(
+        assets=[
+            MarketAssetSummaryRead(
+                symbol=row.symbol,
+                name=row.name,
+                asset_class=row.asset_class,
+                exchange=row.exchange,
+            )
+            for row in rows
+        ]
+    )
+
+
 @router.get("/assets", response_model=MarketAssetsRead)
 def get_market_assets(
     symbols: str = Query(..., min_length=1),
@@ -154,6 +208,10 @@ def _normalize_symbols(symbols: str) -> list[str]:
     if not out:
         raise HTTPException(422, "At least one symbol is required.")
     return out
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _bars_window(lookback_days: int) -> tuple[datetime, datetime]:

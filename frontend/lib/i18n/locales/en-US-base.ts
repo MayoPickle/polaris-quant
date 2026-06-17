@@ -111,6 +111,7 @@ export const enUSBase = {
       filled: "Filled",
       avgPrice: "Avg price",
       limitPrice: "Limit price",
+      stopPrice: "Stop price",
       placed: "Placed",
       source: "Source",
       session: "Session",

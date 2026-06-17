@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
+
+
+_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 
 
 class OrderCreate(BaseModel):
@@ -14,14 +18,32 @@ class OrderCreate(BaseModel):
     qty: float = Field(gt=0)
     order_type: Literal["market", "limit", "stop", "stop_limit"] = "market"
     limit_price: float | None = None
+    stop_price: float | None = None
     extended_hours: bool = False
 
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        symbol = value.strip().upper()
+        if not _SYMBOL_RE.fullmatch(symbol):
+            raise ValueError("Enter a valid symbol.")
+        return symbol
+
     @model_validator(mode="after")
-    def validate_extended_hours(self) -> "OrderCreate":
-        if self.order_type == "limit" and (
-            self.limit_price is None or self.limit_price <= 0
-        ):
+    def validate_order_prices(self) -> "OrderCreate":
+        if self.limit_price is not None and self.limit_price <= 0:
             raise ValueError("Limit orders require a limit price greater than zero.")
+        if self.stop_price is not None and self.stop_price <= 0:
+            raise ValueError("Stop orders require a stop price greater than zero.")
+        if self.order_type == "limit" and self.limit_price is None:
+            raise ValueError("Limit orders require a limit price greater than zero.")
+        if self.order_type == "stop" and self.stop_price is None:
+            raise ValueError("Stop orders require a stop price greater than zero.")
+        if self.order_type == "stop_limit":
+            if self.stop_price is None:
+                raise ValueError("Stop-limit orders require a stop price greater than zero.")
+            if self.limit_price is None:
+                raise ValueError("Stop-limit orders require a limit price greater than zero.")
         if self.extended_hours and self.order_type != "limit":
             raise ValueError("Extended-hours orders must be limit orders.")
         return self
@@ -40,6 +62,7 @@ class OrderRead(BaseModel):
     order_type: str
     qty: float
     limit_price: float | None
+    stop_price: float | None
     raw: dict[str, Any] | None = Field(default=None, exclude=True)
     status: str
     filled_qty: float

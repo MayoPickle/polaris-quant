@@ -6,7 +6,10 @@ and the strategy worker call `place_order`, so the risk guard is never bypassed.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
+import re
+from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +23,10 @@ logger = get_logger(__name__)
 
 class OrderRejected(Exception):
     """Raised when the risk guard blocks an order."""
+
+
+class OrderSubmitFailed(Exception):
+    """Raised when the broker rejects or fails an order submission."""
 
 
 class OrderCancelRejected(Exception):
@@ -52,6 +59,7 @@ BROKER_STATUS_ALIASES = {
     "expired": "canceled",
     "cancelled": "canceled",
 }
+_SYMBOL_RE = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 
 
 def place_order(
@@ -63,40 +71,45 @@ def place_order(
     request: OrderRequest,
     strategy_instance_id: int | None = None,
 ) -> Order:
-    # Reference price for notional-based risk checks.
-    if request.order_type == "limit" and request.limit_price:
-        ref_price = request.limit_price
-    else:
-        quote = broker.get_quote(request.symbol)
-        ref_price = quote.ask_price if request.side == "buy" else quote.bid_price
-        ref_price = ref_price or quote.last_price
+    request = replace(
+        request,
+        symbol=normalize_order_symbol(request.symbol),
+        client_order_id=request.client_order_id or _generate_client_order_id(broker_env),
+    )
+    ref_price = _reference_price(broker, request)
 
     decision = RiskGuard(broker).check(request, ref_price)
     if not decision.allowed:
         logger.warning("Order rejected by risk guard: %s", decision.reason)
         raise OrderRejected(decision.reason)
 
-    result = broker.submit_order(request)
-
-    status = normalize_order_status(result.status)
-    raw = {**(result.raw or {}), "broker_status": result.status}
-
-    order = Order(
+    order = _create_pending_order(
+        db,
         user_id=user_id,
-        strategy_instance_id=strategy_instance_id,
-        broker_order_id=result.broker_order_id,
         broker_env=broker_env,
-        symbol=result.symbol,
-        side=result.side,
-        order_type=request.order_type,
-        qty=result.qty,
-        limit_price=request.limit_price,
-        status=status,
-        filled_qty=result.filled_qty,
-        filled_avg_price=result.filled_avg_price,
-        raw=raw,
+        request=request,
+        strategy_instance_id=strategy_instance_id,
     )
-    db.add(order)
+
+    try:
+        result = broker.submit_order(request)
+    except Exception as exc:  # noqa: BLE001 - broker SDKs raise provider-specific errors.
+        _mark_order_rejected(db, order, str(exc))
+        logger.warning("Order submit failed for %s: %s", request.client_order_id, exc)
+        raise OrderSubmitFailed(str(exc)) from exc
+
+    order.broker_order_id = result.broker_order_id
+    order.symbol = request.symbol
+    order.side = result.side
+    order.qty = result.qty
+    order.status = normalize_order_status(result.status)
+    order.filled_qty = result.filled_qty
+    order.filled_avg_price = result.filled_avg_price
+    order.raw = {
+        **(order.raw or {}),
+        **(result.raw or {}),
+        "broker_status": result.status,
+    }
     db.commit()
     db.refresh(order)
     logger.info("Order placed: %s %s x%s -> %s", request.side, request.symbol, request.qty, order.status)
@@ -133,3 +146,80 @@ def normalize_order_status(status: str) -> str:
     if normalized in LOCAL_ORDER_STATUSES:
         return normalized
     return BROKER_STATUS_ALIASES.get(normalized, "accepted")
+
+
+def normalize_order_symbol(symbol: str) -> str:
+    normalized = symbol.strip().upper()
+    if not _SYMBOL_RE.fullmatch(normalized):
+        raise OrderRejected(f"Invalid symbol: {symbol!r}")
+    return normalized
+
+
+def _generate_client_order_id(broker_env: str) -> str:
+    return f"pq-{broker_env}-{uuid4().hex}"
+
+
+def _reference_price(broker: BrokerClient, request: OrderRequest) -> float:
+    if request.order_type == "limit":
+        if request.limit_price is None:
+            raise OrderRejected("Limit orders require a limit price greater than zero.")
+        return request.limit_price
+    if request.order_type == "stop":
+        if request.stop_price is None:
+            raise OrderRejected("Stop orders require a stop price greater than zero.")
+        return request.stop_price
+    if request.order_type == "stop_limit":
+        if request.stop_price is None:
+            raise OrderRejected("Stop-limit orders require a stop price greater than zero.")
+        if request.limit_price is None:
+            raise OrderRejected("Stop-limit orders require a limit price greater than zero.")
+        return request.limit_price
+
+    quote = broker.get_quote(request.symbol)
+    ref_price = quote.ask_price if request.side == "buy" else quote.bid_price
+    return ref_price or quote.last_price
+
+
+def _create_pending_order(
+    db: Session,
+    *,
+    user_id: int,
+    broker_env: str,
+    request: OrderRequest,
+    strategy_instance_id: int | None,
+) -> Order:
+    order = Order(
+        user_id=user_id,
+        strategy_instance_id=strategy_instance_id,
+        broker_order_id=None,
+        client_order_id=request.client_order_id,
+        broker_env=broker_env,
+        symbol=request.symbol,
+        side=request.side,
+        order_type=request.order_type,
+        qty=request.qty,
+        limit_price=request.limit_price,
+        stop_price=request.stop_price,
+        status="new",
+        filled_qty=0,
+        filled_avg_price=None,
+        raw={
+            "client_order_id": request.client_order_id,
+            "extended_hours": request.extended_hours,
+        },
+    )
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def _mark_order_rejected(db: Session, order: Order, reason: str) -> None:
+    order.status = "rejected"
+    order.raw = {
+        **(order.raw or {}),
+        "submit_error": reason,
+        "submit_failed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    db.commit()
+    db.refresh(order)

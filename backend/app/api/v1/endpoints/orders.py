@@ -14,6 +14,7 @@ from app.services.order_service import (
     OrderCancelFailed,
     OrderCancelRejected,
     OrderRejected,
+    OrderSubmitFailed,
     cancel_order as cancel_order_service,
     place_order,
 )
@@ -49,6 +50,7 @@ def create_order(
         qty=payload.qty,
         order_type=payload.order_type,
         limit_price=payload.limit_price,
+        stop_price=payload.stop_price,
         extended_hours=payload.extended_hours,
     )
     try:
@@ -56,6 +58,8 @@ def create_order(
     except OrderRejected as exc:
         # 422: well-formed request, but risk rules blocked it.
         raise HTTPException(422, str(exc))
+    except OrderSubmitFailed as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Broker submit failed: {exc}")
 
 
 @router.post("/{order_id}/cancel", response_model=OrderRead)

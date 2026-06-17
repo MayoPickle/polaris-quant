@@ -176,7 +176,12 @@ class AlpacaClient(BrokerClient):
     # ---- Orders ----
     def submit_order(self, request: OrderRequest) -> OrderResult:
         from alpaca.trading.enums import OrderSide, TimeInForce
-        from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
+        from alpaca.trading.requests import (
+            LimitOrderRequest,
+            MarketOrderRequest,
+            StopLimitOrderRequest,
+            StopOrderRequest,
+        )
 
         side = OrderSide.BUY if request.side == "buy" else OrderSide.SELL
         if request.order_type == "limit":
@@ -187,6 +192,25 @@ class AlpacaClient(BrokerClient):
                 time_in_force=TimeInForce.DAY,
                 limit_price=request.limit_price,
                 extended_hours=request.extended_hours,
+                client_order_id=request.client_order_id,
+            )
+        elif request.order_type == "stop":
+            order_req = StopOrderRequest(
+                symbol=request.symbol,
+                qty=request.qty,
+                side=side,
+                time_in_force=TimeInForce.DAY,
+                stop_price=request.stop_price,
+                client_order_id=request.client_order_id,
+            )
+        elif request.order_type == "stop_limit":
+            order_req = StopLimitOrderRequest(
+                symbol=request.symbol,
+                qty=request.qty,
+                side=side,
+                time_in_force=TimeInForce.DAY,
+                stop_price=request.stop_price,
+                limit_price=request.limit_price,
                 client_order_id=request.client_order_id,
             )
         else:
@@ -212,6 +236,13 @@ class AlpacaClient(BrokerClient):
         extended_hours = getattr(o, "extended_hours", False)
         if isinstance(extended_hours, str):
             extended_hours = extended_hours.lower() == "true"
+        raw = {
+            "id": str(o.id),
+            "client_order_id": getattr(o, "client_order_id", None),
+            "extended_hours": bool(extended_hours),
+            "limit_price": _optional_float(getattr(o, "limit_price", None)),
+            "stop_price": _optional_float(getattr(o, "stop_price", None)),
+        }
         return OrderResult(
             broker_order_id=str(o.id),
             symbol=o.symbol,
@@ -220,7 +251,7 @@ class AlpacaClient(BrokerClient):
             status=str(o.status).split(".")[-1].lower(),
             filled_qty=float(o.filled_qty or 0),
             filled_avg_price=float(o.filled_avg_price) if o.filled_avg_price else None,
-            raw={"id": str(o.id), "extended_hours": bool(extended_hours)},
+            raw=raw,
         )
 
 

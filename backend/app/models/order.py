@@ -20,6 +20,9 @@ class Order(Base, TimestampMixin):
 
     # Broker-assigned id (None until the broker accepts the order).
     broker_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    client_order_id: Mapped[str | None] = mapped_column(
+        String(80), nullable=True, unique=True, index=True
+    )
     broker_env: Mapped[str] = mapped_column(String(16), default="paper", index=True)
 
     symbol: Mapped[str] = mapped_column(String(16), index=True)
@@ -29,6 +32,7 @@ class Order(Base, TimestampMixin):
     )
     qty: Mapped[float] = mapped_column(Float)
     limit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_price: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     status: Mapped[str] = mapped_column(
         Enum(

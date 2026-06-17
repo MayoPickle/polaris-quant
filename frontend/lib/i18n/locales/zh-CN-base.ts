@@ -107,6 +107,7 @@ export const zhCNBase = {
       filled: "已成交",
       avgPrice: "成交均价",
       limitPrice: "限价",
+      stopPrice: "止损价",
       placed: "下单时间",
       source: "来源",
       session: "时段",

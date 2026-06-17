@@ -119,6 +119,10 @@ function MobileHistoryList({
               <p className="mt-1 font-medium">{priceLabel(order.limit_price, locale)}</p>
             </div>
             <div className="rounded-md border bg-background px-3 py-2">
+              <p className="text-muted-foreground">{t.common.stopPrice}</p>
+              <p className="mt-1 font-medium">{priceLabel(order.stop_price, locale)}</p>
+            </div>
+            <div className="rounded-md border bg-background px-3 py-2">
               <p className="text-muted-foreground">{t.common.avgPrice}</p>
               <p className="mt-1 font-medium">
                 {priceLabel(order.filled_avg_price, locale)}
@@ -165,6 +169,7 @@ function DesktopHistoryTable({
             <TableHead>{t.common.type}</TableHead>
             <TableHead className="text-right">{t.common.qty}</TableHead>
             <TableHead className="text-right">{t.common.limitPrice}</TableHead>
+            <TableHead className="text-right">{t.common.stopPrice}</TableHead>
             <TableHead className="text-right">{t.common.filled}</TableHead>
             <TableHead className="text-right">{t.common.avgPrice}</TableHead>
             <TableHead className="text-right">{t.common.status}</TableHead>
@@ -197,6 +202,9 @@ function DesktopHistoryTable({
               <TableCell className="text-right">
                 {priceLabel(order.limit_price, locale)}
               </TableCell>
+              <TableCell className="text-right">
+                {priceLabel(order.stop_price, locale)}
+              </TableCell>
               <TableCell className="text-right">{order.filled_qty}</TableCell>
               <TableCell className="text-right">
                 {priceLabel(order.filled_avg_price, locale)}
@@ -220,7 +228,7 @@ function DesktopHistoryTable({
           {(!orders || orders.length === 0) && (
             <TableRow>
               <TableCell
-                colSpan={11}
+                colSpan={12}
                 className="py-8 text-center text-muted-foreground"
               >
                 {orders === null

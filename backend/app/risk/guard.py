@@ -36,6 +36,8 @@ class RiskGuard:
         # 1. Global kill-switch.
         if not settings.TRADING_ENABLED:
             return RiskDecision(False, "Trading is disabled (TRADING_ENABLED=false)")
+        if ref_price <= 0:
+            return RiskDecision(False, "Reference price must be greater than zero.")
 
         notional = request.qty * ref_price
 
@@ -47,12 +49,26 @@ class RiskGuard:
                 f"${settings.MAX_ORDER_SIZE_USD:.2f}",
             )
 
-        # 3. Resulting position cap (only relevant when buying).
+        positions = self.broker.get_positions()
+        symbol = request.symbol.upper()
+
+        # 3. Manual trading is long-only: sell orders can only reduce a long position.
+        if request.side == "sell":
+            existing = next((p for p in positions if p.symbol.upper() == symbol), None)
+            existing_qty = existing.qty if existing else 0.0
+            if existing_qty <= 0:
+                return RiskDecision(False, f"No long position in {request.symbol} to sell.")
+            if request.qty - existing_qty > 1e-9:
+                return RiskDecision(
+                    False,
+                    f"Sell quantity {request.qty:g} exceeds long position "
+                    f"{existing_qty:g} in {request.symbol}.",
+                )
+
+        # 4. Resulting position cap (only relevant when buying).
         if request.side == "buy":
-            existing = next(
-                (p for p in self.broker.get_positions() if p.symbol == request.symbol), None
-            )
-            existing_value = existing.market_value if existing else 0.0
+            existing = next((p for p in positions if p.symbol.upper() == symbol), None)
+            existing_value = max(existing.market_value, 0.0) if existing else 0.0
             if existing_value + notional > settings.MAX_POSITION_SIZE_USD:
                 return RiskDecision(
                     False,

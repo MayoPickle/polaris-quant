@@ -51,9 +51,9 @@ import type {
   Quote,
 } from "@/types";
 
-type ManualOrderType = Extract<OrderType, "market" | "limit">;
+type ManualOrderType = OrderType;
 
-const SYMBOL_PATTERN = /^[A-Z][A-Z0-9.]{0,15}$/;
+const SYMBOL_PATTERN = /^[A-Z][A-Z0-9.-]{0,14}$/;
 const FAVORITE_SYMBOL_PATTERN = /^[A-Z][A-Z0-9.-]{0,14}$/;
 const FAVORITES_STORAGE_KEY = "polaris.market.favoriteSymbols.v1";
 const FAVORITES_CHANGED_EVENT = "polaris-market-favorites-changed";
@@ -129,6 +129,7 @@ export function ManualTradingForm({
   const [orderType, setOrderType] = useState<ManualOrderType>("market");
   const [qty, setQty] = useState("1");
   const [limitPrice, setLimitPrice] = useState("");
+  const [stopPrice, setStopPrice] = useState("");
   const [extendedHours, setExtendedHours] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,6 +158,11 @@ export function ManualTradingForm({
   const normalizedSymbol = symbol.trim().toUpperCase();
   const numericQty = Number(qty);
   const numericLimitPrice = Number(limitPrice);
+  const numericStopPrice = Number(stopPrice);
+  const requiresLimitPrice =
+    orderType === "limit" || orderType === "stop_limit";
+  const requiresStopPrice =
+    orderType === "stop" || orderType === "stop_limit";
   const activeQuote =
     quoteState.symbol === normalizedSymbol ? quoteState.quote : null;
   const quoteLoading =
@@ -172,15 +178,20 @@ export function ManualTradingForm({
   );
   const marketReferencePrice =
     marketPriceForSide(activeQuote, side) ?? unitPriceFromPosition(selectedPosition);
-  const referencePrice =
-    orderType === "limit" && numericLimitPrice > 0
+  const referencePrice = requiresLimitPrice
+    ? numericLimitPrice > 0
       ? numericLimitPrice
+      : null
+    : requiresStopPrice && numericStopPrice > 0
+      ? numericStopPrice
       : marketReferencePrice;
   const estimatedNotional =
     numericQty > 0 && referencePrice != null ? numericQty * referencePrice : null;
   const estimateSource =
-    orderType === "limit" && numericLimitPrice > 0
+    requiresLimitPrice && numericLimitPrice > 0
       ? "limit"
+      : orderType === "stop" && numericStopPrice > 0
+        ? "stop"
       : marketPriceForSide(activeQuote, side) != null
         ? "quote"
         : unitPriceFromPosition(selectedPosition) != null
@@ -195,6 +206,12 @@ export function ManualTradingForm({
     t.manualTrading
   );
   const effectiveExtendedHours = orderType === "limit" && extendedHours;
+  const estimatePanelClass =
+    orderType === "market"
+      ? "md:col-span-3"
+      : orderType === "stop_limit"
+        ? ""
+        : "md:col-span-2";
   const watchlistSnapshotBySymbol = useMemo(() => {
     return new Map(
       watchlistSnapshots.map((snapshot) => [snapshot.symbol.toUpperCase(), snapshot])
@@ -337,6 +354,7 @@ export function ManualTradingForm({
       numericQty,
       orderType,
       numericLimitPrice,
+      numericStopPrice,
       effectiveExtendedHours,
       t.manualTrading
     );
@@ -354,7 +372,8 @@ export function ManualTradingForm({
         side,
         qty: numericQty,
         order_type: orderType,
-        limit_price: orderType === "limit" ? numericLimitPrice : null,
+        limit_price: requiresLimitPrice ? numericLimitPrice : null,
+        stop_price: requiresStopPrice ? numericStopPrice : null,
         extended_hours: effectiveExtendedHours,
       });
       setSubmittedOrder(order);
@@ -421,6 +440,8 @@ export function ManualTradingForm({
               >
                 <option value="market">{t.manualTrading.market}</option>
                 <option value="limit">{t.manualTrading.limit}</option>
+                <option value="stop">{t.manualTrading.stop}</option>
+                <option value="stop_limit">{t.manualTrading.stopLimit}</option>
               </select>
             </Field>
             <Field label={t.manualTrading.quantity}>
@@ -435,8 +456,20 @@ export function ManualTradingForm({
             </Field>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[minmax(0,12rem)_minmax(0,13rem)_minmax(0,1fr)]">
-            {orderType === "limit" && (
+          <div className="grid gap-3 md:grid-cols-4">
+            {requiresStopPrice && (
+              <Field label={t.manualTrading.stopPrice}>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={stopPrice}
+                  onChange={(event) => setStopPrice(event.target.value)}
+                  className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
+                />
+              </Field>
+            )}
+            {requiresLimitPrice && (
               <Field label={t.manualTrading.limitPrice}>
                 <input
                   type="number"
@@ -472,7 +505,7 @@ export function ManualTradingForm({
             <div
               className={[
                 "rounded-lg border bg-muted/20 px-3 py-2",
-                orderType === "market" ? "md:col-span-2" : "",
+                estimatePanelClass,
               ].join(" ")}
             >
               <div className="flex items-center justify-between gap-3">
@@ -605,6 +638,8 @@ type TradingWatchlistLabels = {
   detailNoData: string;
   buy: string;
   market: string;
+  stop: string;
+  stopLimit: string;
   quantity: string;
   submitting: string;
   submittedTitle: string;
@@ -612,6 +647,7 @@ type TradingWatchlistLabels = {
   invalidSymbol: string;
   invalidQuantity: string;
   invalidLimitPrice: string;
+  invalidStopPrice: string;
   invalidExtendedHours: string;
   orderFailed: string;
 };
@@ -1268,6 +1304,7 @@ function QuickBuyPanel({
       normalizedSymbol,
       numericQty,
       "market",
+      0,
       0,
       false,
       labels
@@ -2343,31 +2380,43 @@ function validateOrder(
   qty: number,
   orderType: ManualOrderType,
   limitPrice: number,
+  stopPrice: number,
   extendedHours: boolean,
   messages: {
     invalidSymbol: string;
     invalidQuantity: string;
     invalidLimitPrice: string;
+    invalidStopPrice: string;
     invalidExtendedHours: string;
   }
 ) {
   if (!SYMBOL_PATTERN.test(symbol)) return messages.invalidSymbol;
   if (!Number.isFinite(qty) || qty <= 0) return messages.invalidQuantity;
   if (extendedHours && orderType !== "limit") return messages.invalidExtendedHours;
-  if (orderType === "limit" && (!Number.isFinite(limitPrice) || limitPrice <= 0)) {
+  if (
+    (orderType === "limit" || orderType === "stop_limit") &&
+    (!Number.isFinite(limitPrice) || limitPrice <= 0)
+  ) {
     return messages.invalidLimitPrice;
+  }
+  if (
+    (orderType === "stop" || orderType === "stop_limit") &&
+    (!Number.isFinite(stopPrice) || stopPrice <= 0)
+  ) {
+    return messages.invalidStopPrice;
   }
   return null;
 }
 
 function estimateDetailText(
-  source: "limit" | "quote" | "position" | "none",
+  source: "limit" | "stop" | "quote" | "position" | "none",
   referencePrice: number | null,
   quoteLoading: boolean,
   quoteUnavailable: boolean,
   locale: Locale,
   messages: {
     estimateLimitDetail: string;
+    estimateStopDetail: string;
     estimateQuoteDetail: string;
     estimatePositionDetail: string;
     quoteLoading: string;
@@ -2379,6 +2428,9 @@ function estimateDetailText(
     const price = formatCurrency(referencePrice, locale);
     if (source === "limit") {
       return messages.estimateLimitDetail.replace("{price}", price);
+    }
+    if (source === "stop") {
+      return messages.estimateStopDetail.replace("{price}", price);
     }
     if (source === "quote") {
       return messages.estimateQuoteDetail.replace("{price}", price);

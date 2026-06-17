@@ -10,6 +10,7 @@ export interface OrderCreate {
   qty: number;
   order_type?: OrderType;
   limit_price?: number | null;
+  stop_price?: number | null;
   extended_hours?: boolean;
 }
 
@@ -25,6 +26,7 @@ export interface Order {
   order_type: string;
   qty: number;
   limit_price: number | null;
+  stop_price: number | null;
   extended_hours: boolean;
   status: string;
   filled_qty: number;

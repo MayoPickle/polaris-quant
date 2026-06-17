@@ -55,7 +55,9 @@ class RecordingBroker:
         self.submitted: list[OrderRequest] = []
         self.cancelled: list[str] = []
         self.cancel_error: Exception | None = None
+        self.submit_error: Exception | None = None
         self.next_status = "accepted"
+        self.positions: list[Position] = []
 
     def is_market_open(self) -> bool:
         return True
@@ -73,9 +75,11 @@ class RecordingBroker:
         return Account(cash=100_000, equity=100_000, buying_power=100_000)
 
     def get_positions(self) -> list[Position]:
-        return []
+        return self.positions
 
     def submit_order(self, request: OrderRequest) -> OrderResult:
+        if self.submit_error is not None:
+            raise self.submit_error
         self.submitted.append(request)
         return OrderResult(
             broker_order_id=f"manual-{len(self.submitted)}",
@@ -223,6 +227,194 @@ def test_create_order_normalizes_broker_pending_new_status(
         order = db.query(Order).one()
         assert order.status == "new"
         assert order.raw["broker_status"] == "pending_new"
+        assert order.client_order_id is not None
+
+
+def test_create_stop_order_passes_stop_price_and_normalizes_symbol(
+    orders_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, Session = orders_client
+    with Session() as db:
+        db.add(User(id=1, email="trader@example.com", hashed_password="x"))
+        db.commit()
+
+    monkeypatch.setattr(settings, "TRADING_ENABLED", True)
+    monkeypatch.setattr(settings, "MAX_ORDER_SIZE_USD", 20_000.0)
+    monkeypatch.setattr(settings, "MAX_POSITION_SIZE_USD", 20_000.0)
+    broker = RecordingBroker()
+    app.dependency_overrides[get_broker_client] = lambda: broker
+
+    resp = client.post(
+        "/api/v1/orders",
+        json={"symbol": "aapl", "side": "buy", "qty": 2, "order_type": "stop", "stop_price": 128.5},
+    )
+
+    assert resp.status_code == 201
+    assert len(broker.submitted) == 1
+    assert broker.submitted[0].symbol == "AAPL"
+    assert broker.submitted[0].stop_price == 128.5
+    assert broker.submitted[0].client_order_id is not None
+    payload = resp.json()
+    assert payload["symbol"] == "AAPL"
+    assert payload["stop_price"] == 128.5
+    with Session() as db:
+        order = db.query(Order).one()
+        assert order.client_order_id is not None
+        assert order.client_order_id.startswith("pq-paper-")
+
+
+def test_create_stop_limit_order_requires_and_passes_prices(
+    orders_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, Session = orders_client
+    with Session() as db:
+        db.add(User(id=1, email="trader@example.com", hashed_password="x"))
+        db.commit()
+
+    rejected = client.post(
+        "/api/v1/orders",
+        json={"symbol": "AAPL", "side": "buy", "qty": 1, "order_type": "stop_limit", "limit_price": 130},
+    )
+    assert rejected.status_code == 422
+    assert "stop price" in rejected.text
+
+    monkeypatch.setattr(settings, "TRADING_ENABLED", True)
+    monkeypatch.setattr(settings, "MAX_ORDER_SIZE_USD", 20_000.0)
+    monkeypatch.setattr(settings, "MAX_POSITION_SIZE_USD", 20_000.0)
+    broker = RecordingBroker()
+    app.dependency_overrides[get_broker_client] = lambda: broker
+
+    resp = client.post(
+        "/api/v1/orders",
+        json={
+            "symbol": "AAPL",
+            "side": "buy",
+            "qty": 1,
+            "order_type": "stop_limit",
+            "stop_price": 128.5,
+            "limit_price": 130,
+        },
+    )
+
+    assert resp.status_code == 201
+    assert broker.submitted[0].stop_price == 128.5
+    assert broker.submitted[0].limit_price == 130
+    assert resp.json()["stop_price"] == 128.5
+
+
+def test_lowercase_symbol_still_hits_existing_position_limit(
+    orders_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, Session = orders_client
+    with Session() as db:
+        db.add(User(id=1, email="trader@example.com", hashed_password="x"))
+        db.commit()
+
+    monkeypatch.setattr(settings, "TRADING_ENABLED", True)
+    monkeypatch.setattr(settings, "MAX_ORDER_SIZE_USD", 20_000.0)
+    monkeypatch.setattr(settings, "MAX_POSITION_SIZE_USD", 20_000.0)
+    broker = RecordingBroker()
+    broker.positions = [
+        Position(
+            symbol="AAPL",
+            qty=100,
+            avg_entry_price=100,
+            market_value=19_950,
+            unrealized_pl=0,
+        )
+    ]
+    app.dependency_overrides[get_broker_client] = lambda: broker
+
+    resp = client.post(
+        "/api/v1/orders",
+        json={"symbol": "aapl", "side": "buy", "qty": 1, "order_type": "market"},
+    )
+
+    assert resp.status_code == 422
+    assert "MAX_POSITION_SIZE_USD" in resp.text
+    assert broker.submitted == []
+
+
+def test_manual_sell_is_long_only(
+    orders_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, Session = orders_client
+    with Session() as db:
+        db.add(User(id=1, email="trader@example.com", hashed_password="x"))
+        db.commit()
+
+    monkeypatch.setattr(settings, "TRADING_ENABLED", True)
+    monkeypatch.setattr(settings, "MAX_ORDER_SIZE_USD", 20_000.0)
+    monkeypatch.setattr(settings, "MAX_POSITION_SIZE_USD", 20_000.0)
+    broker = RecordingBroker()
+    app.dependency_overrides[get_broker_client] = lambda: broker
+
+    no_position = client.post(
+        "/api/v1/orders",
+        json={"symbol": "AAPL", "side": "sell", "qty": 1, "order_type": "market"},
+    )
+    assert no_position.status_code == 422
+    assert "No long position" in no_position.text
+
+    broker.positions = [
+        Position(
+            symbol="AAPL",
+            qty=3,
+            avg_entry_price=100,
+            market_value=300,
+            unrealized_pl=0,
+        )
+    ]
+    too_large = client.post(
+        "/api/v1/orders",
+        json={"symbol": "AAPL", "side": "sell", "qty": 4, "order_type": "market"},
+    )
+    assert too_large.status_code == 422
+    assert "exceeds long position" in too_large.text
+    assert broker.submitted == []
+
+    accepted = client.post(
+        "/api/v1/orders",
+        json={"symbol": "AAPL", "side": "sell", "qty": 2, "order_type": "market"},
+    )
+    assert accepted.status_code == 201
+    assert broker.submitted[0].side == "sell"
+    assert broker.submitted[0].qty == 2
+
+
+def test_broker_submit_failure_marks_local_order_rejected(
+    orders_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, Session = orders_client
+    with Session() as db:
+        db.add(User(id=1, email="trader@example.com", hashed_password="x"))
+        db.commit()
+
+    monkeypatch.setattr(settings, "TRADING_ENABLED", True)
+    monkeypatch.setattr(settings, "MAX_ORDER_SIZE_USD", 20_000.0)
+    monkeypatch.setattr(settings, "MAX_POSITION_SIZE_USD", 20_000.0)
+    broker = RecordingBroker()
+    broker.submit_error = RuntimeError("broker unavailable")
+    app.dependency_overrides[get_broker_client] = lambda: broker
+
+    resp = client.post(
+        "/api/v1/orders",
+        json={"symbol": "AAPL", "side": "buy", "qty": 1, "order_type": "market"},
+    )
+
+    assert resp.status_code == 502
+    assert "broker unavailable" in resp.text
+    with Session() as db:
+        order = db.query(Order).one()
+        assert order.status == "rejected"
+        assert order.broker_order_id is None
+        assert order.client_order_id is not None
+        assert order.raw["submit_error"] == "broker unavailable"
 
 
 def test_extended_hours_market_order_is_rejected(orders_client) -> None:

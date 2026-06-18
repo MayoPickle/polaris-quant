@@ -1108,7 +1108,7 @@ const TradingWatchlistRow = memo(function TradingWatchlistRow({
       onPointerDown={handlePointerDown}
       onContextMenu={(event) => event.preventDefault()}
       className={[
-        "flex min-h-[4.75rem] w-full touch-pan-y items-center gap-2.5 px-3 py-2.5 text-left transition-[background-color,box-shadow,transform] hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10",
+        "flex min-h-[4.75rem] w-full touch-pan-y items-center gap-2 px-2.5 py-2.5 text-left transition-[background-color,box-shadow,transform] hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2.5 sm:px-3 dark:hover:bg-white/10",
         active ? "bg-muted dark:bg-white/10" : "",
         reordering
           ? "relative z-10 cursor-grabbing bg-muted/80 shadow-sm ring-1 ring-ring/30 touch-none dark:bg-white/15"
@@ -1139,8 +1139,8 @@ const TradingWatchlistRow = memo(function TradingWatchlistRow({
         change={change}
       />
 
-      <span className="grid w-20 shrink-0 justify-items-end gap-1.5">
-        <span className="max-w-full truncate font-mono text-base font-semibold leading-none tabular-nums text-foreground dark:text-white">
+      <span className="grid w-24 shrink-0 justify-items-end gap-1.5">
+        <span className="max-w-full truncate font-mono text-[0.95rem] font-semibold leading-none tabular-nums text-foreground sm:text-base dark:text-white">
           {formatCurrencyMaybe(price, locale)}
         </span>
         <ChangePill change={change} locale={locale} size="sm" />
@@ -1712,7 +1712,10 @@ const WatchlistSparkline = memo(function WatchlistSparkline({
         : "text-red-500";
 
   return (
-    <span className={`h-11 w-[5.75rem] shrink-0 sm:w-[7.5rem] ${tone}`} aria-hidden="true">
+    <span
+      className={`hidden h-11 w-[5.75rem] shrink-0 min-[430px]:block sm:w-[7.5rem] ${tone}`}
+      aria-hidden="true"
+    >
       <svg
         viewBox={`0 0 ${geometry.width} ${geometry.height}`}
         preserveAspectRatio="none"

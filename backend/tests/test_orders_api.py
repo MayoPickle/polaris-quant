@@ -273,18 +273,20 @@ def test_create_stop_limit_order_requires_and_passes_prices(
         db.add(User(id=1, email="trader@example.com", hashed_password="x"))
         db.commit()
 
+    broker = RecordingBroker()
+    app.dependency_overrides[get_broker_client] = lambda: broker
+
     rejected = client.post(
         "/api/v1/orders",
         json={"symbol": "AAPL", "side": "buy", "qty": 1, "order_type": "stop_limit", "limit_price": 130},
     )
     assert rejected.status_code == 422
     assert "stop price" in rejected.text
+    assert broker.submitted == []
 
     monkeypatch.setattr(settings, "TRADING_ENABLED", True)
     monkeypatch.setattr(settings, "MAX_ORDER_SIZE_USD", 20_000.0)
     monkeypatch.setattr(settings, "MAX_POSITION_SIZE_USD", 20_000.0)
-    broker = RecordingBroker()
-    app.dependency_overrides[get_broker_client] = lambda: broker
 
     resp = client.post(
         "/api/v1/orders",
@@ -423,6 +425,9 @@ def test_extended_hours_market_order_is_rejected(orders_client) -> None:
         db.add(User(id=1, email="trader@example.com", hashed_password="x"))
         db.commit()
 
+    broker = RecordingBroker()
+    app.dependency_overrides[get_broker_client] = lambda: broker
+
     resp = client.post(
         "/api/v1/orders",
         json={
@@ -436,6 +441,7 @@ def test_extended_hours_market_order_is_rejected(orders_client) -> None:
 
     assert resp.status_code == 422
     assert "Extended-hours orders must be limit orders" in resp.text
+    assert broker.submitted == []
 
 
 def test_cancel_order_calls_broker_and_updates_local_status(orders_client) -> None:

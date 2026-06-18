@@ -58,8 +58,6 @@ const FAVORITE_SYMBOL_PATTERN = /^[A-Z][A-Z0-9.-]{0,14}$/;
 const FAVORITES_STORAGE_KEY = "polaris.market.favoriteSymbols.v1";
 const FAVORITES_CHANGED_EVENT = "polaris-market-favorites-changed";
 const MAX_FAVORITE_SYMBOLS = 20;
-const WATCHLIST_REORDER_LONG_PRESS_MS = 420;
-const WATCHLIST_REORDER_MOVE_CANCEL_PX = 10;
 const WATCHLIST_BAR_TIMEFRAME = "1Min";
 const WATCHLIST_BAR_LOOKBACK_DAYS = 1;
 const WATCHLIST_SPARKLINE_GEOMETRY = {
@@ -685,7 +683,6 @@ function TradingWatchlist({
   const symbolsRef = useRef(symbols);
   const listRef = useRef<HTMLDivElement | null>(null);
   const reorderRef = useRef<WatchlistReorderSession | null>(null);
-  const suppressNextSelectRef = useRef(false);
   const searchQuery = searchInput.trim();
   const hasSearchQuery = searchQuery.length > 0;
   const favoriteSymbolSet = useMemo(() => new Set(symbols), [symbols]);
@@ -702,10 +699,6 @@ function TradingWatchlist({
     : null;
   const openDetail = useCallback(
     (nextSymbol: string) => {
-      if (suppressNextSelectRef.current) {
-        suppressNextSelectRef.current = false;
-        return;
-      }
       onSelect(nextSymbol);
       setDetailSymbol(nextSymbol);
     },
@@ -715,18 +708,9 @@ function TradingWatchlist({
     const session = reorderRef.current;
     if (!session) return;
 
-    if (session.timerId != null) {
-      window.clearTimeout(session.timerId);
-    }
     window.removeEventListener("pointermove", session.handlePointerMove);
     window.removeEventListener("pointerup", session.handlePointerEnd);
     window.removeEventListener("pointercancel", session.handlePointerEnd);
-    if (session.activated) {
-      suppressNextSelectRef.current = true;
-      window.setTimeout(() => {
-        suppressNextSelectRef.current = false;
-      }, 0);
-    }
     reorderRef.current = null;
     setReorderingSymbol(null);
   }, []);
@@ -735,37 +719,16 @@ function TradingWatchlist({
       if (symbolsRef.current.length < 2) return;
       if (event.pointerType === "mouse" && event.button !== 0) return;
 
+      event.preventDefault();
+      event.stopPropagation();
       clearReorderSession();
-      const startY = event.clientY;
       const pointerId = event.pointerId;
-
-      const activateReorder = () => {
-        const currentSymbols = symbolsRef.current;
-        if (!currentSymbols.includes(symbol)) return;
-
-        const rowRects = measureWatchlistRows(listRef.current);
-        if (rowRects.length < 2) return;
-
-        const session = reorderRef.current;
-        if (!session || session.pointerId !== pointerId) return;
-
-        session.activated = true;
-        session.rowRects = rowRects;
-        session.timerId = null;
-        setReorderingSymbol(symbol);
-      };
+      const rowRects = measureWatchlistRows(listRef.current);
+      if (rowRects.length < 2 || !symbolsRef.current.includes(symbol)) return;
 
       const handlePointerMove = (pointerEvent: PointerEvent) => {
         const session = reorderRef.current;
         if (!session || session.pointerId !== pointerEvent.pointerId) return;
-
-        const deltaY = pointerEvent.clientY - session.startY;
-        if (!session.activated) {
-          if (Math.abs(deltaY) > WATCHLIST_REORDER_MOVE_CANCEL_PX) {
-            clearReorderSession();
-          }
-          return;
-        }
 
         pointerEvent.preventDefault();
         const currentSymbols = symbolsRef.current;
@@ -788,24 +751,18 @@ function TradingWatchlist({
       const handlePointerEnd = (pointerEvent: PointerEvent) => {
         const session = reorderRef.current;
         if (!session || session.pointerId !== pointerEvent.pointerId) return;
-        if (session.activated) pointerEvent.preventDefault();
+        pointerEvent.preventDefault();
         clearReorderSession();
       };
 
-      const timerId = window.setTimeout(
-        activateReorder,
-        WATCHLIST_REORDER_LONG_PRESS_MS
-      );
       reorderRef.current = {
         symbol,
         pointerId,
-        startY,
-        activated: false,
-        timerId,
-        rowRects: [],
+        rowRects,
         handlePointerMove,
         handlePointerEnd,
       };
+      setReorderingSymbol(symbol);
       window.addEventListener("pointermove", handlePointerMove, { passive: false });
       window.addEventListener("pointerup", handlePointerEnd);
       window.addEventListener("pointercancel", handlePointerEnd);
@@ -1052,9 +1009,6 @@ type WatchlistRowRect = {
 type WatchlistReorderSession = {
   symbol: string;
   pointerId: number;
-  startY: number;
-  activated: boolean;
-  timerId: number | null;
   rowRects: WatchlistRowRect[];
   handlePointerMove: (event: PointerEvent) => void;
   handlePointerEnd: (event: PointerEvent) => void;
@@ -1098,54 +1052,73 @@ const TradingWatchlistRow = memo(function TradingWatchlistRow({
   );
 
   return (
-    <button
-      type="button"
+    <div
       data-watchlist-symbol={symbol}
-      aria-pressed={active}
       aria-grabbed={reordering}
-      aria-label={`${symbol} ${securityName}`}
-      onClick={handleSelect}
-      onPointerDown={handlePointerDown}
-      onContextMenu={(event) => event.preventDefault()}
       className={[
-        "flex min-h-[4.75rem] w-full touch-pan-y items-center gap-2 px-2.5 py-2.5 text-left transition-[background-color,box-shadow,transform] hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-2.5 sm:px-3 dark:hover:bg-white/10",
+        "flex min-h-[4.75rem] w-full select-none items-center gap-1.5 px-2 py-2.5 text-left transition-[background-color,box-shadow,transform] hover:bg-muted/60 focus-within:outline-none focus-within:ring-2 focus-within:ring-ring sm:gap-2 sm:px-2.5 dark:hover:bg-white/10",
         active ? "bg-muted dark:bg-white/10" : "",
         reordering
-          ? "relative z-10 cursor-grabbing bg-muted/80 shadow-sm ring-1 ring-ring/30 touch-none dark:bg-white/15"
-          : "cursor-grab",
+          ? "relative z-10 bg-muted/80 shadow-sm ring-1 ring-ring/30 touch-none dark:bg-white/15"
+          : "",
       ].join(" ")}
     >
-      <GripVertical
-        aria-hidden="true"
+      <button
+        type="button"
+        aria-label={`${reorderLabel}: ${symbol}`}
+        onPointerDown={handlePointerDown}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onContextMenu={(event) => event.preventDefault()}
         className={[
-          "size-3.5 shrink-0 text-muted-foreground transition-opacity",
-          reordering ? "opacity-100" : "opacity-35",
+          "flex h-12 w-7 shrink-0 touch-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          reordering
+            ? "cursor-grabbing bg-background/80 text-foreground"
+            : "cursor-grab",
         ].join(" ")}
-      />
-      <span className="sr-only">{`${reorderLabel}: ${symbol}`}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-mono text-lg font-bold leading-6 tracking-normal text-foreground dark:text-white">
-          {symbol}
-        </span>
-        <span className="mt-0.5 block truncate text-xs leading-4 text-muted-foreground">
-          {securityName}
-        </span>
-      </span>
+      >
+        <GripVertical
+          aria-hidden="true"
+          className={[
+            "size-4 transition-opacity sm:size-3.5",
+            reordering ? "opacity-100" : "opacity-55 sm:opacity-35",
+          ].join(" ")}
+        />
+      </button>
 
-      <WatchlistSparkline
-        bars={bars}
-        latestTradePrice={snapshot?.latest_trade_price ?? null}
-        latestTradeTimestamp={snapshot?.latest_trade_timestamp ?? null}
-        change={change}
-      />
-
-      <span className="grid w-24 shrink-0 justify-items-end gap-1.5">
-        <span className="max-w-full truncate font-mono text-[0.95rem] font-semibold leading-none tabular-nums text-foreground sm:text-base dark:text-white">
-          {formatCurrencyMaybe(price, locale)}
+      <button
+        type="button"
+        aria-pressed={active}
+        aria-label={`${symbol} ${securityName}`}
+        onClick={handleSelect}
+        className="flex min-w-0 flex-1 touch-pan-y items-center gap-2 rounded-md text-left focus-visible:outline-none sm:gap-2.5"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-lg font-bold leading-6 tracking-normal text-foreground dark:text-white">
+            {symbol}
+          </span>
+          <span className="mt-0.5 block truncate text-xs leading-4 text-muted-foreground">
+            {securityName}
+          </span>
         </span>
-        <ChangePill change={change} locale={locale} size="sm" />
-      </span>
-    </button>
+
+        <WatchlistSparkline
+          bars={bars}
+          latestTradePrice={snapshot?.latest_trade_price ?? null}
+          latestTradeTimestamp={snapshot?.latest_trade_timestamp ?? null}
+          change={change}
+        />
+
+        <span className="grid w-24 shrink-0 justify-items-end gap-1.5">
+          <span className="max-w-full truncate font-mono text-[0.95rem] font-semibold leading-none tabular-nums text-foreground sm:text-base dark:text-white">
+            {formatCurrencyMaybe(price, locale)}
+          </span>
+          <ChangePill change={change} locale={locale} size="sm" />
+        </span>
+      </button>
+    </div>
   );
 });
 
@@ -1508,6 +1481,7 @@ const DetailSparkline = memo(function DetailSparkline({
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!paths) return;
+      if (event.pointerType !== "mouse") event.preventDefault();
       const rect = event.currentTarget.getBoundingClientRect();
       if (rect.width <= 0) return;
       const chartX =
@@ -1519,7 +1493,7 @@ const DetailSparkline = memo(function DetailSparkline({
   const clearHoverPoint = useCallback(() => setHoverPoint(null), []);
 
   return (
-    <div className="grid gap-2">
+    <div className="grid select-none gap-2">
       {activePoint && (
         <div className="flex min-w-0 items-center justify-between gap-3 font-mono text-[11px] leading-none text-muted-foreground">
           <span className="min-w-0 truncate">
@@ -1535,9 +1509,11 @@ const DetailSparkline = memo(function DetailSparkline({
         className={`grid h-44 w-full grid-cols-[minmax(0,1fr)_3.15rem] gap-1.5 sm:h-48 ${tone}`}
       >
         <div
-          className="relative min-w-0 rounded-md bg-background/35"
+          className="relative min-w-0 touch-none select-none rounded-md bg-background/35"
           onPointerDown={handlePointerMove}
           onPointerMove={handlePointerMove}
+          onPointerUp={clearHoverPoint}
+          onPointerCancel={clearHoverPoint}
           onPointerLeave={clearHoverPoint}
           role="img"
           aria-label="Intraday price chart"
@@ -2349,7 +2325,7 @@ function writeFavoriteSymbols(symbols: string[]) {
 function measureWatchlistRows(container: HTMLDivElement | null): WatchlistRowRect[] {
   if (!container) return [];
   return Array.from(
-    container.querySelectorAll<HTMLButtonElement>("[data-watchlist-symbol]")
+    container.querySelectorAll<HTMLElement>("[data-watchlist-symbol]")
   ).map((row) => {
     const rect = row.getBoundingClientRect();
     return {
